@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+build/
+
+# Vite
+*.local
+.vite/
+
+# Svelte
+.svelte-kit/
+
+# Cloudflare / Wrangler
+.wrangler/
+proxy/.wrangler/
+proxy/node_modules/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.secret
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# TypeScript
+*.tsbuildinfo
+
+# Lock files (keep one, gitignore the other)
+package-lock.json
