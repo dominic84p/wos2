@@ -76,14 +76,14 @@
       <ChevronRight size={10} color="rgba(255,255,255,0.2)" />
       <span class="addr-seg">This PC</span>
       <ChevronRight size={10} color="rgba(255,255,255,0.2)" />
-      <span class="addr-seg active">Games</span>
+      <span class="addr-seg active">Homework</span>
     </div>
     <div class="search-wrap">
       <Search size={12} color="rgba(255,255,255,0.35)" />
       <input
         class="search-input"
         bind:value={search}
-        placeholder="Search Games"
+        placeholder="Search Homework"
         autocomplete="off"
         spellcheck="false"
       />
@@ -96,7 +96,7 @@
       <div class="sidebar-section">Quick access</div>
       <button class="sidebar-item active" use:ripple>
         <Gamepad2 size={15} color="#4cc2ff" />
-        <span>Games</span>
+        <span>Homework</span>
       </button>
 
       <div class="sidebar-section">This PC</div>

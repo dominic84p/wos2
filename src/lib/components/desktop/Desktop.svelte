@@ -19,11 +19,12 @@
   import NotepadApp from '../apps/NotepadApp.svelte'
   import PaintApp from '../apps/PaintApp.svelte'
   import HTMLPreviewApp from '../apps/HTMLPreviewApp.svelte'
+  import TerminalApp from '../apps/TerminalApp.svelte'
   import type { AppId, AppMeta } from '../../types'
 
   const apps: AppMeta[] = [
     { id: 'browser',     label: 'Browser'   },
-    { id: 'gamesfolder', label: 'Games'     },
+    { id: 'gamesfolder', label: 'Homework'  },
     { id: 'music',       label: 'Music'     },
     { id: 'codefolder',  label: 'Code'      },
     { id: 'files',       label: 'Files'     },
@@ -34,17 +35,20 @@
   ]
 
   function launch(app: AppMeta) {
-    // Games and Code folders open FilesApp at their location
     if (app.id === 'gamesfolder') {
       const existing = $windows.find(w => w.appId === 'files' && w.initialPath === 'games')
       if (existing) { windows.focus(existing.id); return }
-      windows.open('files', 'Games', { initialPath: 'games' })
+      windows.open('files', 'Homework', { initialPath: 'games' })
       return
     }
     if (app.id === 'codefolder') {
       const existing = $windows.find(w => w.appId === 'files' && w.initialPath === '/Code')
       if (existing) { windows.focus(existing.id); return }
       windows.open('files', 'Code', { initialPath: '/Code' })
+      return
+    }
+    if (app.id === 'terminal') {
+      windows.open('terminal', 'Terminal', { width: 750, height: 480 })
       return
     }
     const existing = $windows.find(w => w.appId === app.id)
@@ -68,6 +72,7 @@
       case 'notepad':     return NotepadApp
       case 'paint':       return PaintApp
       case 'htmlpreview': return HTMLPreviewApp
+      case 'terminal':    return TerminalApp
       default:            return null
     }
   }
@@ -142,31 +147,22 @@
   }
 
   function onDesktopMousedown(e: MouseEvent) {
-    // Only start rubber-band on the bare desktop (not icons, windows, taskbar)
     const t = e.target as HTMLElement
     if (t.closest('.dskApp') || t.closest('.floatTab') || t.closest('.taskbar') || t.closest('.actmenu')) return
     if (e.button !== 0) return
-
     selStart = { x: e.clientX, y: e.clientY }
     selEnd   = { x: e.clientX, y: e.clientY }
-
-    function onMove(ev: MouseEvent) {
-      selEnd = { x: ev.clientX, y: ev.clientY }
-    }
+    function onMove(ev: MouseEvent) { selEnd = { x: ev.clientX, y: ev.clientY } }
     function onUp() {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      // Keep selection visible but stop drawing
-      selStart = null
-      selEnd   = null
+      selStart = null; selEnd = null
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }
 
-  function clearSelection() {
-    selectedIds = new Set()
-  }
+  function clearSelection() { selectedIds = new Set() }
 
   // ── Context menu ──────────────────────────────────────────────────
   let ctxX = 0, ctxY = 0, ctxOpen = false
@@ -185,41 +181,61 @@
     if (id === 'wallpaper') launch({ id: 'settings', label: 'Settings'  })
     if (id === 'files')     launch({ id: 'files',    label: 'Files'     })
   }
+
+  $: isHacker  = $settings.themeId === 'hacker'
+  $: isAislop  = $settings.themeId === 'aislop'
+
+  // ── Background style ──────────────────────────────────────────────
+  $: bgStyle = isHacker
+    ? 'background: #020402'
+    : isAislop
+    ? 'background: linear-gradient(135deg, #0d0520 0%, #060d25 40%, #130528 70%, #060d25 100%)'
+    : `background-image:url('${$settings.wallpaper}')`
 </script>
 
 <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 <div
   class="desktop"
-  style="background-image:url('{$settings.wallpaper}')"
+  style={bgStyle}
   role="main"
   on:contextmenu={onContextMenu}
   on:mousedown={onDesktopMousedown}
 >
-  <!-- Desktop icons -->
-  <div class="desktopCont">
-    {#each apps as app (app.id)}
-      <DesktopIcon
-        {app}
-        x={iconPositions[app.id]?.x ?? 10}
-        y={iconPositions[app.id]?.y ?? 10}
-        selected={selectedIds.has(app.id)}
-        on:open={() => launch(app)}
-        on:move={(e) => { clearSelection(); onIconMove(app.id, e.detail) }}
-        on:moveend={() => onIconMoveEnd(app.id)}
-        on:focus={clearSelection}
-      />
-    {/each}
+  {#if isHacker}
+    <!-- Hacker theme: the desktop IS the terminal -->
+    <div
+      class="hacker-desktop"
+      style="top:var(--tb-top);bottom:var(--tb-bottom);left:var(--tb-left);right:var(--tb-right)"
+    >
+      <TerminalApp windowId="desktop" />
+    </div>
+  {:else}
+    <div
+      class="desktopCont"
+      style="top:var(--tb-top);bottom:var(--tb-bottom);left:var(--tb-left);right:var(--tb-right)"
+    >
+      {#each apps as app (app.id)}
+        <DesktopIcon
+          {app}
+          x={iconPositions[app.id]?.x ?? 10}
+          y={iconPositions[app.id]?.y ?? 10}
+          selected={selectedIds.has(app.id)}
+          on:open={() => launch(app)}
+          on:move={(e) => { clearSelection(); onIconMove(app.id, e.detail) }}
+          on:moveend={() => onIconMoveEnd(app.id)}
+          on:focus={clearSelection}
+        />
+      {/each}
 
-    <!-- Rubber-band selection box -->
-    {#if selRect && selRect.w > 4 && selRect.h > 4}
-      <div
-        class="sel-rect"
-        style="left:{selRect.x}px;top:{selRect.y}px;width:{selRect.w}px;height:{selRect.h}px"
-      ></div>
-    {/if}
-  </div>
+      {#if selRect && selRect.w > 4 && selRect.h > 4}
+        <div
+          class="sel-rect"
+          style="left:{selRect.x}px;top:{selRect.y}px;width:{selRect.w}px;height:{selRect.h}px"
+        ></div>
+      {/if}
+    </div>
+  {/if}
 
-  <!-- Windows -->
   {#each $windows as win (win.id)}
     <Window {win}>
       {#if appComponent(win.appId)}
@@ -247,12 +263,14 @@
 
   .desktopCont {
     position: absolute;
-    inset: 0;
-    bottom: var(--taskbar-height);
     pointer-events: none;
   }
 
-  /* Rubber-band selection rectangle — Windows style */
+  .hacker-desktop {
+    position: absolute;
+    pointer-events: all;
+  }
+
   .sel-rect {
     position: absolute;
     pointer-events: none;

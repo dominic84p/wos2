@@ -6,10 +6,12 @@ const CURRENT_VERSION = 1
 
 const defaults: SaveState = {
   wallpaper: '/wallpapers/win11-default.jpg',
-  theme: 'dark',
+  themeId: 'default',
   accentColor: '#3584e4',
   musicQueue: [],
   musicVolume: 0.7,
+  willMode: false,
+  taskbarEdge: 'bottom',
   version: CURRENT_VERSION,
 }
 

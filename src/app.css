@@ -5,7 +5,7 @@
 }
 
 :root {
-  /* Win11React dark theme variables — ported directly */
+  /* Win11React dark theme base */
   --clrPrm:        #4cc2ff;
   --dark-txt:      #fff;
   --txt-col:       #ddd;
@@ -14,23 +14,151 @@
   --comp-clr:      #191919;
   --gray-txt:      #aaa;
   --sat-txt:       #999;
-  --wintheme:      #1e1e26;
-  --fakeMica:      #202020 radial-gradient(#1a1f35 25%, #202020 100%) no-repeat fixed;
 
-  /* Our vars */
-  --accent:                var(--clrPrm);
-  --accent-solid:          #0078d4;
-  --taskbar-height:        48px;
-  --window-radius:         8px;
-  --window-titlebar-height: 32px;
-  --window-border:         rgba(255,255,255,0.08);
-  --window-bg:             #202020;
-  --window-titlebar-bg:    #2c2c2c;
-  --window-titlebar-focus: #1f1f1f;
-  --text-primary:          #ffffff;
-  --text-secondary:        rgba(255,255,255,0.6);
+  /* Accent — controlled by App.svelte from settings.accentColor */
+  --accent: #3584e4;
+
+  /* Taskbar */
+  --taskbar-height: 48px;
+  --taskbar-bg:     rgba(32,32,32,0.75);
+
+  /* Window */
+  --window-radius:           8px;
+  --window-titlebar-height:  32px;
+  --window-border:           rgba(255,255,255,0.08);
+  --window-bg:               #202020;
+  --window-titlebar-bg:      #2a2a2a;
+  --window-titlebar-focus:   #1f1f1f;
+
+  /* Text */
+  --text-primary:   #ffffff;
+  --text-secondary: rgba(255,255,255,0.6);
+
+  /* Taskbar edge insets — set by App.svelte based on taskbarEdge setting */
+  --tb-top:    0px;
+  --tb-bottom: var(--taskbar-height);
+  --tb-left:   0px;
+  --tb-right:  0px;
+
+  /* Terminal colors */
+  --term-bg:     #0c0c0c;
+  --term-out:    #d4d4d4;
+  --term-cmd:    #88d498;
+  --term-err:    #f48771;
+  --term-info:   #569cd6;
+  --term-prompt: #88d498;
 
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Midnight theme ───────────────────────────────────────────────── */
+[data-theme="midnight"] {
+  --window-bg:             #0d0d1a;
+  --window-titlebar-bg:    #14142a;
+  --window-titlebar-focus: #0a0a1e;
+  --window-radius:         12px;
+  --window-border:         rgba(90,110,255,0.22);
+  --taskbar-bg:            rgba(4,4,16,0.92);
+  --text-primary:          #dde0ff;
+  --text-secondary:        rgba(200,205,255,0.5);
+}
+
+/* ── Linux / GNOME theme ─────────────────────────────────────────── */
+[data-theme="linux"] {
+  --window-bg:             #313131;
+  --window-titlebar-bg:    #494949;
+  --window-titlebar-focus: #3c3c3c;
+  --window-radius:         14px;
+  --window-border:         rgba(255,255,255,0.12);
+  --taskbar-bg:            rgba(20,20,20,0.97);
+  --text-primary:          #ffffff;
+  --text-secondary:        rgba(255,255,255,0.65);
+}
+
+/* ── Hacker theme ────────────────────────────────────────────────── */
+[data-theme="hacker"] {
+  --window-bg:             #030803;
+  --window-titlebar-bg:    #071007;
+  --window-titlebar-focus: #050d05;
+  --window-radius:         2px;
+  --window-border:         rgba(0,255,65,0.35);
+  --taskbar-bg:            rgba(0,6,0,0.97);
+  --text-primary:          #00ff41;
+  --text-secondary:        rgba(0,255,65,0.6);
+
+  --term-bg:     #020402;
+  --term-out:    #00ff41;
+  --term-cmd:    #00ff41;
+  --term-err:    #ff4040;
+  --term-info:   #00ff41;
+  --term-prompt: #00ff41;
+}
+
+[data-theme="hacker"] * {
+  font-family: 'Courier New', 'Lucida Console', monospace !important;
+}
+
+/* Scanline + phosphor glow — makes hacker theme feel like a real CRT terminal */
+[data-theme="hacker"] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.18) 0px,
+    rgba(0, 0, 0, 0.18) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  pointer-events: none;
+  z-index: 999999;
+}
+
+/* Scrollbars go green in hacker mode */
+
+[data-theme="hacker"] ::-webkit-scrollbar-thumb { background: rgba(0,255,65,0.3); }
+[data-theme="hacker"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,255,65,0.55); }
+
+/* ── AI Slop theme ───────────────────────────────────────────────── */
+[data-theme="aislop"] {
+  --window-bg:             linear-gradient(160deg, #150d30 0%, #0c1535 100%);
+  --window-titlebar-bg:    linear-gradient(90deg, #4c1d95 0%, #1d4ed8 100%);
+  --window-titlebar-focus: linear-gradient(90deg, #7c3aed 0%, #2563eb 45%, #db2777 100%);
+  --window-radius:         20px;
+  --window-border:         rgba(167,139,250,0.55);
+  --taskbar-bg:            linear-gradient(90deg, #4f46e5 0%, #7c3aed 33%, #db2777 66%, #6d28d9 100%);
+  --text-primary:          #ffffff;
+  --text-secondary:        rgba(216,180,254,0.85);
+  --accent:                #a855f7;
+
+  /* Override term colors just in case terminal opens */
+  --term-bg:     #150d30;
+  --term-out:    #e9d5ff;
+  --term-cmd:    #a855f7;
+  --term-err:    #f472b6;
+  --term-info:   #60a5fa;
+  --term-prompt: #a855f7;
+}
+
+/* Deep purple body background */
+[data-theme="aislop"] body {
+  background: linear-gradient(135deg, #0d0520 0%, #060d25 50%, #150520 100%);
+}
+
+/* Purple scrollbars */
+[data-theme="aislop"] ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.45); }
+[data-theme="aislop"] ::-webkit-scrollbar-thumb:hover { background: rgba(168,85,247,0.7); }
+
+/* Desktop icon hover/focus gets purple glow instead of blue */
+[data-theme="aislop"] .dskApp:hover {
+  background: rgba(168,85,247,0.18) !important;
+}
+[data-theme="aislop"] .dskApp.focused,
+[data-theme="aislop"] .dskApp.selected,
+[data-theme="aislop"] .dskApp:focus {
+  background: rgba(168,85,247,0.3) !important;
+  border-color: rgba(168,85,247,0.6) !important;
+  box-shadow: 0 0 12px rgba(168,85,247,0.3);
 }
 
 html, body {
@@ -52,7 +180,7 @@ html, body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.32); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-/* Ripple — from Win11React adapted */
+/* Ripple */
 .ripple-wave {
   position: absolute;
   border-radius: 50%;
@@ -63,7 +191,6 @@ html, body {
   pointer-events: none;
   z-index: 999;
 }
-
 @keyframes ripple-expand {
   to { transform: translate(-50%,-50%) scale(28); opacity: 0; }
 }
@@ -73,10 +200,9 @@ html, body {
   from { opacity: 0; transform: scale(0.96) translateY(8px); }
   to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
-
 .window-enter { animation: window-in 0.15s cubic-bezier(0.16,1,0.3,1); }
 
-/* Taskbar icon pop animation — stolen directly from Win11React */
+/* Taskbar icon pop */
 @keyframes popintro {
   0%   { transform: scale(0); }
   40%  { transform: scale(1.125); }

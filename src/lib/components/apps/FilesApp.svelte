@@ -35,7 +35,7 @@
     const win = get(windows).find(w => w.id === windowId)
     const p = win?.initialPath
     if (!p || p === '/') return { type: 'root', label: 'This PC' }
-    if (p === 'games')   return { type: 'games', label: 'Games' }
+    if (p === 'games')   return { type: 'games', label: 'Homework' }
     if (p === 'desktop') return { type: 'desktop', label: 'Desktop' }
     if (p === '/Code' || p === 'code') return { type: 'code', label: 'Code' }
     return { type: 'vfs', path: p, label: p.split('/').filter(Boolean).pop() ?? 'Files' }
@@ -115,8 +115,8 @@
           navLoc: { type: 'code' as const, label: 'Code' }, deletePath: '/Code' },
         has('/Documents') && { id: 'documents', name: 'Documents', isFolder: true, iconType: 'folder-gold' as const,
           navLoc: { type: 'vfs' as const, path: '/Documents', label: 'Documents' }, deletePath: '/Documents' },
-        has('/Games') && { id: 'games', name: 'Games', isFolder: true, iconType: 'folder-green' as const,
-          navLoc: { type: 'games' as const, label: 'Games' }, deletePath: '/Games' },
+        has('/Games') && { id: 'games', name: 'Homework', isFolder: true, iconType: 'folder-green' as const,
+          navLoc: { type: 'games' as const, label: 'Homework' }, deletePath: '/Games' },
       ].filter(Boolean) as GridItem[]
 
       const rootEntries = vfs.listDir('/').filter(e => !SYSTEM.has(e.path)).map(e =>
@@ -135,8 +135,8 @@
     if (l.type === 'desktop') return filt([
       { id: 'code-f',    name: 'Code',      isFolder: true, iconType: 'folder-gold',
         navLoc: { type: 'code', label: 'Code' } },
-      { id: 'games-f',   name: 'Games',     isFolder: true, iconType: 'folder-green',
-        navLoc: { type: 'games', label: 'Games' } },
+      { id: 'games-f',   name: 'Homework',     isFolder: true, iconType: 'folder-green',
+        navLoc: { type: 'games', label: 'Homework' } },
       { id: 'browser',   name: 'Browser',   isFolder: false, iconType: 'app', iconAppId: 'browser',   appId: 'browser'   },
       { id: 'music',     name: 'Music',     isFolder: false, iconType: 'app', iconAppId: 'music',     appId: 'music'     },
       { id: 'notepad',   name: 'Notepad',   isFolder: false, iconType: 'app', iconAppId: 'notepad',   appId: 'notepad'   },
@@ -287,7 +287,7 @@
     const c: Crumb[] = [{ label: 'This PC', loc: { type: 'root', label: 'This PC' } }]
     if (loc.type === 'root') return c
     if (loc.type === 'desktop') { c.push({ label: 'Desktop', loc }); return c }
-    if (loc.type === 'games')   { c.push({ label: 'Games',   loc }); return c }
+    if (loc.type === 'games')   { c.push({ label: 'Homework',   loc }); return c }
     if (loc.type === 'code')    { c.push({ label: 'Code',    loc }); return c }
     if (loc.type === 'vfs' && loc.path) {
       let built = ''
@@ -394,9 +394,9 @@
         <span>Documents</span>
       </button>
       <button class="sidebar-item" class:active={activeNav==='games'} use:ripple
-        on:click={() => go({ type: 'games', label: 'Games' })}>
+        on:click={() => go({ type: 'games', label: 'Homework' })}>
         <Gamepad2 size={15} color={activeNav==='games' ? '#4cc2ff' : 'rgba(255,255,255,0.5)'} />
-        <span>Games</span>
+        <span>Homework</span>
       </button>
 
       <div class="sidebar-section">This PC</div>

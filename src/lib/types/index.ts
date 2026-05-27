@@ -1,4 +1,10 @@
-export type AppId = 'browser' | 'games' | 'music' | 'settings' | 'files' | 'discover' | 'ide' | 'vscode' | 'eaglercraft' | 'gamesfolder' | 'codefolder' | 'game' | 'notepad' | 'paint' | 'htmlpreview'
+export type AppId =
+  | 'browser' | 'games' | 'music' | 'settings' | 'files' | 'discover'
+  | 'ide' | 'vscode' | 'eaglercraft' | 'gamesfolder' | 'codefolder'
+  | 'game' | 'notepad' | 'paint' | 'htmlpreview' | 'terminal'
+
+export type ThemeId = 'default' | 'midnight' | 'linux' | 'hacker' | 'aislop' | 'custom'
+export type TaskbarEdge = 'bottom' | 'top' | 'left' | 'right'
 
 export interface AppMeta {
   id: AppId
@@ -24,15 +30,17 @@ export interface WindowState {
 
 export interface SaveState {
   wallpaper: string
-  theme: 'light' | 'dark'
+  themeId: ThemeId
   accentColor: string
   musicQueue: MusicTrack[]
   musicVolume: number
+  willMode: boolean
+  taskbarEdge: TaskbarEdge
   version: number
 }
 
 export interface MusicTrack {
-  id: string          // YouTube video ID
+  id: string
   title: string
   artist: string
   thumbnail: string

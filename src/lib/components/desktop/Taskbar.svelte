@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte'
   import { windows } from '../../stores/windows'
+  import { settings } from '../../stores/settings'
   import { music, currentTrack } from '../../stores/music'
   import { Wifi, WifiOff, SkipBack, SkipForward, Play, Pause } from 'lucide-svelte'
   import { ripple } from '../../actions/ripple'
@@ -17,9 +18,11 @@
   let timeStr = ''
   let dateStr = ''
 
-  // Taskbar window button right-click menu
   let ctxWinId: string | null = null
-  let ctxWinX = 0
+  let ctxWinX = 0, ctxWinY = 0
+
+  $: edge = $settings.taskbarEdge ?? 'bottom'
+  $: isVert = edge === 'left' || edge === 'right'
 
   function updateClock() {
     const now = new Date()
@@ -54,23 +57,35 @@
     e.preventDefault()
     ctxWinId = winId
     ctxWinX = e.clientX
+    ctxWinY = e.clientY
   }
 
   function closeWinCtx() { ctxWinId = null }
+
+  $: ctxMenuStyle = (() => {
+    const safeX = Math.min(ctxWinX, window.innerWidth - 164)
+    const safeY = Math.min(ctxWinY, window.innerHeight - 130)
+    switch (edge) {
+      case 'top':   return `top:calc(var(--taskbar-height) + 4px);left:${safeX}px`
+      case 'left':  return `top:${safeY}px;left:calc(var(--taskbar-height) + 4px)`
+      case 'right': return `top:${safeY}px;right:calc(var(--taskbar-height) + 4px)`
+      default:      return `bottom:calc(var(--taskbar-height) + 4px);left:${safeX}px`
+    }
+  })()
 </script>
 
 {#if startMenuOpen}
   <StartMenu
     {apps}
+    taskbarEdge={edge}
     on:launch={(e) => { dispatch('launch', e.detail); startMenuOpen = false }}
     on:close={() => startMenuOpen = false}
   />
 {/if}
 
-<div class="taskbar">
+<div class="taskbar" data-edge={edge}>
   <div class="taskcont">
-    <!-- Center bar: start + open windows -->
-    <div class="tsbar" data-side="left">
+    <div class="tsbar">
 
       <!-- Start button -->
       <button
@@ -88,10 +103,9 @@
         </svg>
       </button>
 
-      <!-- Divider -->
       <div class="ts-divider"></div>
 
-      <!-- Open windows — Win11React tsIcon pattern -->
+      <!-- Open windows -->
       {#each $windows as win (win.id)}
         {@const isActive = win.focused && !win.minimized}
         {@const isOpen   = !win.minimized}
@@ -110,10 +124,9 @@
       {/each}
     </div>
 
-    <!-- Right: tray -->
+    <!-- Tray / right side -->
     <div class="taskright">
-      <!-- Mini player -->
-      {#if $currentTrack && $windows.some(w => w.appId === 'music')}
+      {#if !isVert && $currentTrack && $windows.some(w => w.appId === 'music')}
         <div class="mini-player">
           <img src={$currentTrack.thumbnail} alt="" class="thumb" />
           <div class="track-info">
@@ -130,34 +143,30 @@
         </div>
       {/if}
 
-      <!-- Wifi + clock group -->
       <div class="tray-group">
-        <div class="tray-icon" title={online ? 'Network connected' : 'No connection'}>
-          {#if online}
-            <Wifi size={14} />
-          {:else}
-            <WifiOff size={14} color="#e74c3c" />
-          {/if}
+        <div class="tray-icon" title={online ? 'Connected' : 'No connection'}>
+          {#if online}<Wifi size={14}/>{:else}<WifiOff size={14} color="#e74c3c"/>{/if}
         </div>
 
         <div class="taskDate">
           <div>{timeStr}</div>
-          <div>{dateStr}</div>
+          {#if !isVert}<div>{dateStr}</div>{/if}
         </div>
       </div>
 
-      <!-- Show desktop strip — from Win11React graybd -->
-      <button class="graybd" title="Show desktop" on:click={showDesktop}></button>
+      {#if !isVert}
+        <button class="graybd" title="Show desktop" on:click={showDesktop}></button>
+      {/if}
     </div>
   </div>
 </div>
 
-<!-- Window button right-click context menu -->
+<!-- Window context menu -->
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 {#if ctxWinId}
   <div class="win-ctx-bd" on:click={closeWinCtx} on:contextmenu|preventDefault={closeWinCtx}></div>
-  <menu class="win-ctx" style="left:{Math.min(ctxWinX, window.innerWidth - 160)}px">
+  <menu class="win-ctx" style={ctxMenuStyle}>
     {#each $windows.filter(w => w.id === ctxWinId) as win}
       {#if win.minimized}
         <button class="win-ctx-opt" on:click={() => { windows.focus(win.id); closeWinCtx() }}>Restore</button>
@@ -174,18 +183,38 @@
 {/if}
 
 <style>
-  /* ── Base — ported from Win11React taskbar.scss ── */
+  /* ── Base taskbar ── */
   .taskbar {
     position: fixed;
-    bottom: 0; left: 0; right: 0;
-    height: var(--taskbar-height);
-    background: rgba(32,32,32,0.75);
+    background: var(--taskbar-bg);
     -webkit-backdrop-filter: saturate(3) blur(20px);
     backdrop-filter: saturate(3) blur(20px);
-    border-top: 1px solid rgba(255,255,255,0.07);
     z-index: 10000;
   }
 
+  /* ── Edge positions ── */
+  .taskbar[data-edge="bottom"] {
+    bottom: 0; left: 0; right: 0;
+    height: var(--taskbar-height);
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+  .taskbar[data-edge="top"] {
+    top: 0; left: 0; right: 0;
+    height: var(--taskbar-height);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .taskbar[data-edge="left"] {
+    top: 0; left: 0; bottom: 0;
+    width: var(--taskbar-height);
+    border-right: 1px solid rgba(255,255,255,0.07);
+  }
+  .taskbar[data-edge="right"] {
+    top: 0; right: 0; bottom: 0;
+    width: var(--taskbar-height);
+    border-left: 1px solid rgba(255,255,255,0.07);
+  }
+
+  /* ── Container ── */
   .taskcont {
     position: relative;
     width: 100%;
@@ -194,7 +223,14 @@
     align-items: center;
   }
 
-  /* ── Left/center bar ── */
+  .taskbar[data-edge="left"] .taskcont,
+  .taskbar[data-edge="right"] .taskcont {
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 0;
+  }
+
+  /* ── App bar (left side / top in vertical) ── */
   .tsbar {
     height: 100%;
     display: flex;
@@ -206,6 +242,19 @@
     overflow: hidden;
   }
 
+  .taskbar[data-edge="left"] .tsbar,
+  .taskbar[data-edge="right"] .tsbar {
+    flex-direction: column;
+    height: auto;
+    width: 100%;
+    flex: 1;
+    padding: 2px 0;
+    align-items: center;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* ── Divider ── */
   .ts-divider {
     width: 1px;
     height: 18px;
@@ -214,7 +263,14 @@
     flex-shrink: 0;
   }
 
-  /* ── tsIcon — Win11React tsIcon pattern ── */
+  .taskbar[data-edge="left"] .ts-divider,
+  .taskbar[data-edge="right"] .ts-divider {
+    width: 18px;
+    height: 1px;
+    margin: 2px 0;
+  }
+
+  /* ── tsIcon ── */
   .tsIcon-wrap { position: relative; }
 
   .tsIcon {
@@ -234,7 +290,6 @@
     overflow: hidden;
   }
 
-  /* The bottom indicator bar — stolen directly from Win11React */
   .tsIcon::after {
     content: '';
     position: absolute;
@@ -249,19 +304,33 @@
     transition: width 0.2s ease-in-out, background 0.2s ease-in-out;
   }
 
-  .tsIcon[data-open="true"]::after   { width: 6px; }
-  .tsIcon[data-active="true"]::after { width: 14px; background: var(--clrPrm); }
-
-  .tsIcon:hover,
-  .tsIcon[data-active="true"] {
-    background: rgba(255,255,255,0.1);
+  .taskbar[data-edge="left"] .tsIcon::after,
+  .taskbar[data-edge="right"] .tsIcon::after {
+    bottom: auto;
+    left: auto;
+    transform: none;
+    right: 2px;
+    top: 50%;
+    margin-top: -3px;
+    width: 3px;
+    height: 0;
   }
 
-  /* Start button special state */
+  .tsIcon[data-open="true"]::after   { width: 6px; }
+  .tsIcon[data-active="true"]::after { width: 14px; background: var(--accent); }
+
+  .taskbar[data-edge="left"] .tsIcon[data-open="true"]::after,
+  .taskbar[data-edge="right"] .tsIcon[data-open="true"]::after   { height: 6px; width: 3px; }
+  .taskbar[data-edge="left"] .tsIcon[data-active="true"]::after,
+  .taskbar[data-edge="right"] .tsIcon[data-active="true"]::after { height: 14px; width: 3px; background: var(--accent); }
+
+  .tsIcon:hover,
+  .tsIcon[data-active="true"] { background: rgba(255,255,255,0.1); }
+
   .start-btn { color: rgba(255,255,255,0.85); }
   .start-btn:hover { background: rgba(255,255,255,0.1); }
   .start-btn.active { background: rgba(255,255,255,0.14); }
-  .start-btn::after { display: none; }
+  .start-btn::after { display: none !important; }
 
   /* ── Right / tray ── */
   .taskright {
@@ -271,7 +340,16 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    padding-right: 0;
+  }
+
+  .taskbar[data-edge="left"] .taskright,
+  .taskbar[data-edge="right"] .taskright {
+    position: static;
+    flex-direction: column;
+    height: auto;
+    align-items: center;
+    padding-bottom: 4px;
+    gap: 0;
   }
 
   /* Mini player */
@@ -306,13 +384,19 @@
   }
   .tray-group:hover { background: rgba(255,255,255,0.08); }
 
+  .taskbar[data-edge="left"] .tray-group,
+  .taskbar[data-edge="right"] .tray-group {
+    flex-direction: column;
+    height: auto;
+    padding: 4px 2px;
+  }
+
   .tray-icon {
-    width: 32px; height: 100%;
+    width: 32px; height: 32px;
     display: flex; align-items: center; justify-content: center;
     color: rgba(255,255,255,0.75);
   }
 
-  /* taskDate — ported from Win11React */
   .taskDate {
     display: flex;
     flex-direction: column;
@@ -321,8 +405,14 @@
     padding: 0 8px;
     height: 100%;
     font-size: 11px;
-    font-weight: 400;
     color: var(--dark-txt);
+  }
+
+  .taskbar[data-edge="left"] .taskDate,
+  .taskbar[data-edge="right"] .taskDate {
+    padding: 2px 0;
+    height: auto;
+    font-size: 10px;
   }
 
   .taskDate div {
@@ -331,7 +421,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* graybd — ported from Win11React */
   .graybd {
     border: solid 1px transparent;
     height: 1rem;
@@ -342,14 +431,13 @@
     border-radius: 0;
     transition: border-color 0.1s;
   }
-
   .graybd:hover {
     border: solid 1px transparent;
     border-width: 0 0 0 2px;
     border-color: #a1a1a1;
   }
 
-  /* Window right-click context menu */
+  /* Window context menu */
   .win-ctx-bd {
     position: fixed;
     inset: 0;
@@ -358,7 +446,6 @@
 
   .win-ctx {
     position: fixed;
-    bottom: calc(var(--taskbar-height) + 4px);
     z-index: 10002;
     background: rgba(34,36,47,0.92);
     -webkit-backdrop-filter: saturate(2) blur(20px);

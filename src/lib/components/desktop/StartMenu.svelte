@@ -6,6 +6,16 @@
   import type { AppMeta } from '../../types'
 
   export let apps: AppMeta[]
+  export let taskbarEdge: string = 'bottom'
+
+  $: menuPos = (() => {
+    switch (taskbarEdge) {
+      case 'top':   return 'top:calc(var(--taskbar-height) + 10px);bottom:auto;left:10px'
+      case 'left':  return 'bottom:10px;top:auto;left:calc(var(--taskbar-height) + 10px)'
+      case 'right': return 'bottom:10px;top:auto;left:auto;right:calc(var(--taskbar-height) + 10px)'
+      default:      return 'bottom:calc(var(--taskbar-height) + 10px);top:auto;left:10px'
+    }
+  })()
 
   const dispatch = createEventDispatcher()
 
@@ -41,7 +51,7 @@
 <div class="sm-backdrop" on:click|self={close}></div>
 
 <!-- startMenu — ported from Win11React startmenu.scss -->
-<div class="startMenu dpShad" data-hide={hidden}>
+<div class="startMenu dpShad" data-hide={hidden} style={menuPos}>
 
   {#if !showAll}
     <!-- Main view -->
