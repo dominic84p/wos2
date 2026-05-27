@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte'
   import { ripple } from '../../actions/ripple'
   import { Pickaxe } from 'lucide-svelte'
 
@@ -52,31 +53,71 @@
 
   let activeSrc: string | null = null
   let activeLabel = ''
+  let iframeEl: HTMLIFrameElement
+  let barVisible = true
+  let hideTimer: ReturnType<typeof setTimeout>
 
   function launch(url: string, clientName: string, variant: string) {
     activeSrc = url
     activeLabel = `${clientName} — ${variant}`
+    scheduleHide()
   }
 
   function back() {
     activeSrc = null
     activeLabel = ''
+    clearTimeout(hideTimer)
+    barVisible = true
   }
+
+  function scheduleHide() {
+    clearTimeout(hideTimer)
+    barVisible = true
+    hideTimer = setTimeout(() => { barVisible = false }, 2000)
+  }
+
+  function onMousemove(e: MouseEvent) {
+    if (!activeSrc) return
+    if (e.clientY < 60) scheduleHide()
+    else if (barVisible) {
+      clearTimeout(hideTimer)
+      hideTimer = setTimeout(() => { barVisible = false }, 1200)
+    }
+  }
+
+  function onFullscreenChange() {
+    const fs = document.fullscreenElement
+    if (fs && iframeEl && (fs === iframeEl || iframeEl.contains(fs))) {
+      iframeEl.focus()
+    }
+  }
+
+  onMount(() => {
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    window.addEventListener('mousemove', onMousemove)
+  })
+  onDestroy(() => {
+    document.removeEventListener('fullscreenchange', onFullscreenChange)
+    window.removeEventListener('mousemove', onMousemove)
+    clearTimeout(hideTimer)
+  })
 </script>
 
 <div class="eagler">
   {#if activeSrc}
-    <div class="game-bar">
-      <button class="back-btn" use:ripple on:click={back}>← Launcher</button>
-      <span class="game-label">{activeLabel}</span>
-      <span class="hint">F11 fullscreen · Esc unlock mouse</span>
+    <div class="game-wrap">
+      <iframe
+        bind:this={iframeEl}
+        src={activeSrc}
+        title={activeLabel}
+        allow="pointer-lock; fullscreen; clipboard-read; clipboard-write; gamepad"
+      ></iframe>
+      <div class="game-bar" class:hidden={!barVisible}>
+        <button class="back-btn" use:ripple on:click={back}>← Launcher</button>
+        <span class="game-label">{activeLabel}</span>
+        <span class="hint">F11 fullscreen · Esc unlock mouse</span>
+      </div>
     </div>
-    <iframe
-      src={activeSrc}
-      title={activeLabel}
-      allow="pointer-lock; fullscreen; clipboard-read; clipboard-write"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-pointer-lock"
-    ></iframe>
 
   {:else}
     <div class="launcher">
@@ -129,14 +170,38 @@
     color: #fff;
   }
 
+  .game-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .game-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #000;
+    display: block;
+  }
+
   .game-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 6px 12px;
-    background: #1a1a22;
+    background: rgba(20,20,30,0.85);
+    backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255,255,255,0.06);
-    flex-shrink: 0;
+    z-index: 10;
+    transition: opacity 0.25s, transform 0.25s;
+  }
+
+  .game-bar.hidden {
+    opacity: 0;
+    transform: translateY(-100%);
+    pointer-events: none;
   }
 
   .back-btn {
@@ -154,8 +219,6 @@
   .back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
   .game-label { font-size: 13px; color: rgba(255,255,255,0.7); font-weight: 500; }
   .hint { margin-left: auto; font-size: 11px; color: rgba(255,255,255,0.22); }
-
-  iframe { flex: 1; border: none; width: 100%; background: #000; }
 
   .launcher {
     display: flex;

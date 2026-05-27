@@ -1,187 +1,319 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { ArrowLeft, ArrowRight, RefreshCw, Home, Lock, Globe } from 'lucide-svelte'
+  import { ArrowLeft, ArrowRight, RefreshCw } from 'lucide-svelte'
 
   export let windowId: string = ''
 
   const PROXY = 'https://wos-proxy.therealdominic84plays.workers.dev'
+  const proxyUrl = (url: string) => `${PROXY}/?u=${encodeURIComponent(url)}`
 
-  function proxyUrl(url: string): string {
-    return `${PROXY}/?u=${encodeURIComponent(url)}`
-  }
+  const SHORTCUTS = [
+    { label: 'TikTok',    url: 'https://www.tiktok.com',        color: '#010101', emoji: '🎵' },
+    { label: 'YouTube',   url: 'https://www.youtube.com',       color: '#ff0000', emoji: '▶' },
+    { label: 'Twitch',    url: 'https://www.twitch.tv',         color: '#9146ff', emoji: '📺' },
+    { label: 'Reddit',    url: 'https://www.reddit.com',        color: '#ff4500', emoji: '👾' },
+    { label: 'Twitter',   url: 'https://twitter.com',           color: '#1da1f2', emoji: '🐦' },
+    { label: 'Spotify',   url: 'https://open.spotify.com',      color: '#1db954', emoji: '🎧' },
+    { label: 'GitHub',    url: 'https://github.com',            color: '#24292e', emoji: '🐙' },
+    { label: 'Wikipedia', url: 'https://en.wikipedia.org',      color: '#3366cc', emoji: '📖' },
+  ]
 
-  let history: string[] = []
+  let navHistory: string[] = []
   let historyIdx = -1
 
+  // iframeSrc is the only thing that drives the iframe — only set on explicit user actions
+  let iframeSrc = ''
+  // displayUrl tracks the real in-page URL for the address bar (updated by postMessage)
+  let displayUrl = ''
+
   let iframeEl: HTMLIFrameElement
+  let iframeKey = 0
   let loading = false
+  let addrVal = ''
+  let addrFocused = false
 
-  let navOpen = false
-  let navInput = ''
-
-  $: currentUrl = history[historyIdx] ?? ''
   $: canBack    = historyIdx > 0
-  $: canForward = historyIdx < history.length - 1
-  $: isSecure   = currentUrl.startsWith('https://')
-  $: domain     = (() => { try { return new URL(currentUrl).hostname } catch { return '' } })()
+  $: canForward = historyIdx < navHistory.length - 1
+  $: if (!addrFocused) addrVal = displayUrl
 
-  function navigate(raw: string, pushHistory = true) {
-    let target = raw.trim()
-    if (!target) return
-    if (!target.startsWith('http://') && !target.startsWith('https://')) {
-      target = target.includes(' ') || !target.includes('.')
-        ? `https://duckduckgo.com/?q=${encodeURIComponent(target)}`
-        : 'https://' + target
+  function normUrl(raw: string): string {
+    let t = raw.trim()
+    if (!t) return ''
+    if (!t.startsWith('http://') && !t.startsWith('https://')) {
+      t = t.includes(' ') || !t.includes('.')
+        ? `https://duckduckgo.com/?q=${encodeURIComponent(t)}`
+        : 'https://' + t
     }
-    if (pushHistory) {
-      history = [...history.slice(0, historyIdx + 1), target]
-      historyIdx = history.length - 1
-    }
-    loading = true
-    navOpen = false
+    return t
   }
 
-  function goBack()    { if (canBack)    { historyIdx--; loading = true } }
-  function goForward() { if (canForward) { historyIdx++; loading = true } }
+  function navigate(raw: string, push = true) {
+    const t = normUrl(raw)
+    if (!t) return
+    if (push) {
+      navHistory = [...navHistory.slice(0, historyIdx + 1), t]
+      historyIdx = navHistory.length - 1
+    }
+    displayUrl = t
+    iframeSrc = proxyUrl(t)
+    loading = true
+  }
+
+  function goBack() {
+    if (!canBack) return
+    historyIdx--
+    displayUrl = navHistory[historyIdx]
+    iframeSrc = proxyUrl(navHistory[historyIdx])
+    loading = true
+  }
+
+  function goForward() {
+    if (!canForward) return
+    historyIdx++
+    displayUrl = navHistory[historyIdx]
+    iframeSrc = proxyUrl(navHistory[historyIdx])
+    loading = true
+  }
 
   function refresh() {
-    if (!currentUrl) return
+    if (!iframeSrc) return
     loading = true
-    const u = currentUrl
-    history[historyIdx] = ''
-    history = [...history]
-    setTimeout(() => { history[historyIdx] = u; history = [...history] }, 30)
+    iframeKey++
   }
 
-  function openNav() {
-    navInput = currentUrl
-    navOpen = true
+  function onAddrFocus(e: FocusEvent) {
+    addrFocused = true
+    addrVal = displayUrl
+    setTimeout(() => (e.target as HTMLInputElement)?.select(), 0)
   }
 
-  function onLoad() { loading = false }
+  function onAddrBlur() { addrFocused = false }
+
+  function onAddrKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      navigate(addrVal)
+      ;(e.target as HTMLInputElement).blur()
+    }
+    if (e.key === 'Escape') {
+      addrVal = displayUrl
+      ;(e.target as HTMLInputElement).blur()
+    }
+  }
 
   function onMessage(e: MessageEvent) {
     if (e.data?.__wos === 'nav' && typeof e.data.url === 'string') {
-      if (historyIdx >= 0) history[historyIdx] = e.data.url
-      history = [...history]
+      displayUrl = e.data.url
     }
   }
 
-  onMount(() => window.addEventListener('message', onMessage))
-  onDestroy(() => window.removeEventListener('message', onMessage))
+  function onFullscreenChange() {
+    const fs = document.fullscreenElement
+    if (fs && iframeEl && (fs === iframeEl || iframeEl.contains(fs))) iframeEl.focus()
+  }
 
-  navigate('https://duckduckgo.com')
+  onMount(() => {
+    window.addEventListener('message', onMessage)
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+  })
+  onDestroy(() => {
+    window.removeEventListener('message', onMessage)
+    document.removeEventListener('fullscreenchange', onFullscreenChange)
+  })
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<div class="browser" on:click={() => { if (navOpen) navOpen = false }} on:keydown={() => {}}>
-  <div class="toolbar" on:click|stopPropagation>
-    <button title="Back"    class:disabled={!canBack}    on:click={goBack}><ArrowLeft  size={15} /></button>
-    <button title="Forward" class:disabled={!canForward} on:click={goForward}><ArrowRight size={15} /></button>
-    <button title="Refresh" on:click={refresh}><RefreshCw size={13} class={loading ? 'spin' : ''} /></button>
-    <button title="Home"    on:click={() => navigate('https://duckduckgo.com')}><Home size={13} /></button>
+<div class="browser">
+  <div class="toolbar">
+    <button class="nav-btn" class:disabled={!canBack}    on:click={goBack}    title="Back"><ArrowLeft  size={15} /></button>
+    <button class="nav-btn" class:disabled={!canForward} on:click={goForward} title="Forward"><ArrowRight size={15} /></button>
+    <button class="nav-btn" class:spin={loading}         on:click={refresh}   title="Refresh"><RefreshCw  size={13} /></button>
 
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="domain-pill" on:click={openNav} title="Click to navigate">
-      <span class="lock-icon">
-        {#if isSecure}<Lock size={10} color="#4caf50" />{:else}<Globe size={10} color="#888" />{/if}
-      </span>
-      <span class="domain-text">{domain || 'New Tab'}</span>
-    </div>
+    <input
+      class="addr-bar"
+      type="text"
+      spellcheck="false"
+      autocomplete="off"
+      placeholder="Search or enter URL..."
+      bind:value={addrVal}
+      on:focus={onAddrFocus}
+      on:blur={onAddrBlur}
+      on:keydown={onAddrKeydown}
+    />
+  </div>
 
-    {#if navOpen}
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="nav-popup" on:click|stopPropagation>
-        <!-- svelte-ignore a11y-autofocus -->
+  {#if iframeSrc}
+    {#key iframeKey}
+      <iframe
+        bind:this={iframeEl}
+        src={iframeSrc}
+        title="Browser"
+        allow="autoplay; fullscreen"
+        on:load={() => (loading = false)}
+      ></iframe>
+    {/key}
+  {:else}
+    <div class="newtab">
+      <div class="nt-search-wrap">
         <input
-          class="nav-input"
-          bind:value={navInput}
-          autofocus
+          class="nt-search"
           placeholder="Search or enter URL..."
           spellcheck="false"
           autocomplete="off"
-          on:keydown={(e) => {
-            if (e.key === 'Enter') navigate(navInput)
-            if (e.key === 'Escape') navOpen = false
-          }}
-          on:focus={(e) => (e.target as HTMLInputElement).select()}
+          on:keydown={(e) => { if (e.key === 'Enter') navigate((e.target as HTMLInputElement).value) }}
         />
       </div>
-    {/if}
-  </div>
-
-  {#if currentUrl}
-    <iframe
-      bind:this={iframeEl}
-      src={proxyUrl(currentUrl)}
-      title="Browser"
-      allow="autoplay; fullscreen"
-      on:load={onLoad}
-    ></iframe>
-  {:else}
-    <div class="blank"></div>
+      <div class="tiles">
+        {#each SHORTCUTS as s}
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div class="tile" on:click={() => navigate(s.url)}>
+            <div class="tile-icon" style="background:{s.color}">{s.emoji}</div>
+            <span class="tile-label">{s.label}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
   {/if}
 </div>
 
 <style>
   .browser {
-    display: flex; flex-direction: column;
-    height: 100%; background: #202020; position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #1a1a1a;
   }
 
+  /* ── Toolbar ── */
   .toolbar {
-    display: flex; align-items: center; gap: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
     padding: 5px 8px;
     background: #2a2a2a;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    flex-shrink: 0; position: relative;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    flex-shrink: 0;
   }
 
-  .toolbar button {
-    width: 30px; height: 28px;
-    border: none; background: transparent;
-    color: rgba(255,255,255,0.6);
-    border-radius: 5px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.1s, color 0.1s; flex-shrink: 0;
+  .nav-btn {
+    width: 30px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.55);
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.1s, color 0.1s;
+    flex-shrink: 0;
   }
-  .toolbar button:hover:not(.disabled) { background: rgba(255,255,255,0.1); color: #fff; }
-  .toolbar button.disabled { opacity: 0.3; cursor: default; }
+  .nav-btn:hover:not(.disabled) { background: rgba(255,255,255,0.1); color: #fff; }
+  .nav-btn.disabled { opacity: 0.28; cursor: default; pointer-events: none; }
 
-  .domain-pill {
-    flex: 1; display: flex; align-items: center; gap: 6px;
+  .addr-bar {
+    flex: 1;
+    height: 28px;
+    padding: 0 10px;
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 20px; padding: 0 12px; height: 28px;
-    cursor: pointer; transition: background 0.1s, border-color 0.1s;
+    border-radius: 6px;
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: background 0.1s, border-color 0.1s;
     min-width: 0;
   }
-  .domain-pill:hover {
-    background: rgba(255,255,255,0.1);
-    border-color: rgba(255,255,255,0.18);
+  .addr-bar:focus {
+    background: rgba(255,255,255,0.09);
+    border-color: rgba(0,120,212,0.6);
   }
-  .lock-icon { display: flex; align-items: center; flex-shrink: 0; }
-  .domain-text {
-    font-size: 13px; color: rgba(255,255,255,0.7);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  .addr-bar::placeholder { color: rgba(255,255,255,0.25); }
+
+  /* ── Iframe ── */
+  iframe {
+    flex: 1;
+    border: none;
+    width: 100%;
+    background: #fff;
   }
 
-  .nav-popup {
-    position: absolute; top: calc(100% + 6px); left: 80px; right: 8px;
-    background: #2d2d2d;
-    border: 1px solid rgba(0,120,212,0.6);
-    border-radius: 8px; padding: 6px 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-    z-index: 9999;
+  /* ── New tab page ── */
+  .newtab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    background: #141414;
+    padding: 24px;
+    overflow-y: auto;
   }
-  .nav-input {
-    width: 100%; border: none; background: transparent; outline: none;
-    color: #fff; font-size: 13px; font-family: inherit;
-  }
-  .nav-input::placeholder { color: rgba(255,255,255,0.3); }
 
-  iframe { flex: 1; border: none; width: 100%; background: #fff; }
-  .blank { flex: 1; background: #1a1a1a; }
+  .nt-search-wrap { width: 100%; max-width: 520px; }
+
+  .nt-search {
+    width: 100%;
+    padding: 12px 18px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 24px;
+    color: #fff;
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+    box-sizing: border-box;
+  }
+  .nt-search:focus {
+    border-color: rgba(0,120,212,0.6);
+    background: rgba(255,255,255,0.09);
+  }
+  .nt-search::placeholder { color: rgba(255,255,255,0.3); }
+
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    width: 100%;
+    max-width: 440px;
+  }
+
+  .tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 10px 6px;
+    border-radius: 10px;
+    transition: background 0.12s;
+  }
+  .tile:hover { background: rgba(255,255,255,0.07); }
+
+  .tile-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    flex-shrink: 0;
+  }
+
+  .tile-label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 64px;
+  }
 
   :global(.spin) { animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }

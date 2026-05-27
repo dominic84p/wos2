@@ -1,5 +1,6 @@
 <script lang="ts">
   import { settings } from '../../stores/settings'
+  import { exportBackup, importBackup, type WOSBackup } from '../../utils/backup'
   import { Download, Upload, RotateCcw } from 'lucide-svelte'
 
   export const windowId: string = ''
@@ -31,14 +32,22 @@
     { label: 'Pink',   value: '#e84393' },
   ]
 
-  function exportSave() {
-    const json = settings.exportSave()
-    const blob = new Blob([json], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = 'wos_save.json'
-    a.click()
-    URL.revokeObjectURL(a.href)
+  let exporting = false
+  let importing = false
+
+  async function exportSave() {
+    exporting = true
+    try {
+      const backup = await exportBackup()
+      const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `wos_backup_${new Date().toISOString().slice(0,10)}.json`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } finally {
+      exporting = false
+    }
   }
 
   function importSave() {
@@ -48,9 +57,22 @@
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file) return
-      const text = await file.text()
-      const ok = settings.importSave(text)
-      if (!ok) alert('Invalid save file')
+      importing = true
+      try {
+        const text = await file.text()
+        const backup = JSON.parse(text) as WOSBackup
+        if (backup.version === 2 && backup.localStorage) {
+          await importBackup(backup)
+          window.location.reload()
+        } else {
+          // legacy v1 settings-only
+          const ok = settings.importSave(text)
+          if (!ok) alert('Invalid backup file')
+        }
+      } catch {
+        alert('Invalid backup file')
+        importing = false
+      }
     }
     input.click()
   }
@@ -127,13 +149,13 @@
 
     <section>
       <h2>Save Data</h2>
-      <p class="hint">Your settings and music queue are saved in this browser. Export a backup before the Chromebook wipes it.</p>
+      <p class="hint">Backs up everything — WOS settings, EaglerCraft username &amp; world saves, icon positions, cookies. Download it and email it to yourself so you can restore it on any machine.</p>
       <div class="save-row">
-        <button class="action-btn" on:click={exportSave}>
-          <Download size={14} /> Export backup
+        <button class="action-btn" on:click={exportSave} disabled={exporting}>
+          <Download size={14} /> {exporting ? 'Exporting…' : 'Export backup'}
         </button>
-        <button class="action-btn" on:click={importSave}>
-          <Upload size={14} /> Import backup
+        <button class="action-btn" on:click={importSave} disabled={importing}>
+          <Upload size={14} /> {importing ? 'Importing…' : 'Import backup'}
         </button>
         <button class="action-btn danger" on:click={resetSave}>
           <RotateCcw size={14} />

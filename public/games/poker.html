@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Texas Hold'em</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#076324;font-family:'Segoe UI',system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:12px;overflow:hidden;user-select:none;color:#fff}
+h1{font-size:18px;letter-spacing:2px;color:#f0d060;font-weight:700}
+.table{width:100%;max-width:700px;flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
+.bots{display:flex;justify-content:space-around;gap:8px}
+.player-area{display:flex;flex-direction:column;align-items:center;gap:3px}
+.pname{font-size:11px;color:rgba(255,255,255,.65);letter-spacing:.5px}
+.pchips{font-size:13px;font-weight:700;color:#f0d060}
+.pbet{font-size:11px;color:rgba(255,255,255,.5)}
+.active-ring{outline:2px solid #f0d060;border-radius:6px}
+.folded{opacity:.3}
+.cards-row{display:flex;gap:4px;justify-content:center;min-height:62px;align-items:center}
+.card{width:42px;height:60px;background:#fff;border-radius:5px;display:flex;flex-direction:column;justify-content:space-between;padding:3px;font-size:10px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.4);flex-shrink:0;position:relative;border:1px solid #ccc}
+.card.red{color:#c00}
+.card .tl{line-height:1.1}
+.card .suit-c{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:16px;opacity:.12}
+.card .br{line-height:1.1;align-self:flex-end;transform:rotate(180deg)}
+.card.back{background:repeating-linear-gradient(45deg,#1a3a8a,#1a3a8a 4px,#1550cc 4px,#1550cc 8px);border-color:#0a2060}
+.card.hidden-card{width:42px;height:60px;background:rgba(0,0,0,.2);border:2px dashed rgba(255,255,255,.15);border-radius:5px}
+.community{display:flex;flex-direction:column;align-items:center;gap:6px}
+.community .cards-row{gap:6px}
+.community .card{width:52px;height:72px;font-size:12px}
+.community .card .suit-c{font-size:20px}
+.pot-info{text-align:center;font-size:14px}
+.pot-info b{color:#f0d060}
+.street-label{font-size:11px;color:rgba(255,255,255,.45);letter-spacing:1px;text-transform:uppercase}
+#message{font-size:15px;font-weight:700;color:#f0d060;text-align:center;min-height:22px;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+.you-area{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%}
+.you-info{display:flex;gap:24px;font-size:13px}
+.you-info span b{color:#f0d060}
+.action-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+button{padding:9px 20px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:.1s;font-family:inherit}
+button:hover:not(:disabled){filter:brightness(1.15)}
+button:disabled{opacity:.3;cursor:default}
+.btn-fold{background:#c0392b;color:#fff}
+.btn-call{background:#2980b9;color:#fff}
+.btn-check{background:#27ae60;color:#fff}
+.btn-raise{background:#8e44ad;color:#fff}
+.btn-new{background:#f0d060;color:#1a1a1a}
+.raise-row{display:flex;gap:6px;align-items:center}
+.raise-row input{width:70px;padding:7px;border-radius:6px;border:none;font-size:13px;text-align:center;background:rgba(0,0,0,.3);color:#fff;outline:none}
+</style>
+</head>
+<body>
+<h1>♠ TEXAS HOLD'EM ♣</h1>
+
+<div class="table">
+  <!-- Bots -->
+  <div class="bots" id="bots-row"></div>
+
+  <!-- Community + pot -->
+  <div class="community">
+    <div class="street-label" id="street-label">Waiting</div>
+    <div class="cards-row" id="community-cards"></div>
+    <div class="pot-info">Pot: <b id="pot">$0</b></div>
+    <div id="message"></div>
+  </div>
+
+  <!-- You -->
+  <div class="you-area">
+    <div class="cards-row" id="your-cards"></div>
+    <div class="you-info">
+      <span>You: <b id="your-chips">$1000</b></span>
+      <span>Your bet: <b id="your-bet">$0</b></span>
+    </div>
+    <div class="action-btns" id="action-btns">
+      <button class="btn-new" onclick="startGame()">Deal</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Deck ─────────────────────────────────────────────────────
+const SUITS=['♠','♥','♦','♣'],VALS=['2','3','4','5','6','7','8','9','10','J','Q','K','A']
+const RANK={2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,10:10,J:11,Q:12,K:13,A:14}
+function mkDeck(){const d=[];for(const s of SUITS)for(const v of VALS)d.push({s,v,r:RANK[v]});return d}
+function shuffle(d){for(let i=d.length-1;i>0;i--){const j=0|Math.random()*(i+1);[d[i],d[j]]=[d[j],d[i]]};return d}
+function isRed(c){return c.s==='♥'||c.s==='♦'}
+
+// ── Hand Evaluator ────────────────────────────────────────────
+function combos5(arr){
+  const r=[];
+  for(let a=0;a<arr.length-4;a++)for(let b=a+1;b<arr.length-3;b++)for(let c=b+1;c<arr.length-2;c++)
+  for(let d=c+1;d<arr.length-1;d++)for(let e=d+1;e<arr.length;e++)r.push([arr[a],arr[b],arr[c],arr[d],arr[e]])
+  return r
+}
+function evalHand(h){
+  // h is 5 cards
+  const ranks=h.map(c=>c.r).sort((a,b)=>b-a)
+  const suits=h.map(c=>c.s)
+  const flush=suits.every(s=>s===suits[0])
+  const uniq=[...new Set(ranks)]
+  // straight check
+  let straight=false,straightHigh=0
+  if(uniq.length===5){
+    if(ranks[0]-ranks[4]===4){straight=true;straightHigh=ranks[0]}
+    // wheel: A-2-3-4-5
+    if(ranks[0]===14&&ranks[1]===5&&ranks[1]-ranks[4]===3){straight=true;straightHigh=5}
+  }
+  // freq map
+  const freq={}
+  for(const r of ranks)freq[r]=(freq[r]||0)+1
+  const freqVals=Object.values(freq).sort((a,b)=>b-a)
+  const freqKeys=Object.entries(freq).sort((a,b)=>b[1]-a[1]||b[0]-a[0]).map(([k])=>+k)
+
+  let cat,tiebreakers
+  if(straight&&flush){cat=8;tiebreakers=[straightHigh]}
+  else if(freqVals[0]===4){cat=7;tiebreakers=freqKeys}
+  else if(freqVals[0]===3&&freqVals[1]===2){cat=6;tiebreakers=freqKeys}
+  else if(flush){cat=5;tiebreakers=ranks}
+  else if(straight){cat=4;tiebreakers=[straightHigh]}
+  else if(freqVals[0]===3){cat=3;tiebreakers=freqKeys}
+  else if(freqVals[0]===2&&freqVals[1]===2){cat=2;tiebreakers=freqKeys}
+  else if(freqVals[0]===2){cat=1;tiebreakers=freqKeys}
+  else{cat=0;tiebreakers=ranks}
+  return{cat,tiebreakers}
+}
+const HAND_NAMES=['High Card','One Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush']
+function bestHand(hole,community){
+  const all=[...hole,...community]
+  let best=null,bestScore=null
+  for(const combo of combos5(all)){
+    const ev=evalHand(combo)
+    if(!bestScore||compareEval(ev,bestScore)>0){best=ev;bestScore=ev}
+  }
+  return best
+}
+function compareEval(a,b){
+  if(a.cat!==b.cat)return a.cat-b.cat
+  for(let i=0;i<Math.max(a.tiebreakers.length,b.tiebreakers.length);i++){
+    const diff=(a.tiebreakers[i]||0)-(b.tiebreakers[i]||0)
+    if(diff)return diff
+  }
+  return 0
+}
+
+// ── Game State ────────────────────────────────────────────────
+const NAMES=['You','Rex','Ash','Kai']
+const SB=10,BB=20
+let players,deck,community,pot,currentBet,street,actionIdx,dealerIdx,gameOver,waitingForDeal
+
+function initPlayers(){
+  return NAMES.map((name,i)=>({name,chips:1000,hole:[],bet:0,folded:false,allIn:false,isBot:i>0}))
+}
+
+function startGame(){
+  players=initPlayers()
+  dealerIdx=0
+  newHand()
+}
+
+function newHand(){
+  gameOver=false
+  deck=shuffle(mkDeck())
+  community=[]
+  pot=0
+  street='preflop'
+  for(const p of players){p.hole=[];p.bet=0;p.folded=false;p.allIn=false}
+
+  // remove broke players
+  players=players.filter(p=>p.chips>0)
+  if(players.length<2){endGame();return}
+  if(!players.find(p=>!p.isBot)){endGame();return}
+
+  // deal hole cards
+  for(let i=0;i<2;i++)for(const p of players)p.hole.push(deck.pop())
+
+  // blinds
+  dealerIdx=dealerIdx%players.length
+  const sbIdx=(dealerIdx+1)%players.length
+  const bbIdx=(dealerIdx+2)%players.length
+  postBlind(sbIdx,SB)
+  postBlind(bbIdx,BB)
+  currentBet=BB
+  actionIdx=(bbIdx+1)%players.length
+
+  msg('')
+  render()
+  nextAction()
+}
+
+function postBlind(idx,amount){
+  const p=players[idx]
+  const n=Math.min(amount,p.chips)
+  p.chips-=n;p.bet+=n;pot+=n
+}
+
+// ── Betting ───────────────────────────────────────────────────
+function nextAction(){
+  // skip folded/allIn/broke
+  const active=players.filter(p=>!p.folded&&!p.allIn&&p.chips>0)
+  if(active.length===0||allCalledOrFolded()){advanceStreet();return}
+
+  const cur=players[actionIdx%players.length]
+  if(cur.folded||cur.allIn||cur.chips===0){actionIdx++;nextAction();return}
+
+  if(cur.isBot){setTimeout(()=>{botAction(cur);actionIdx++;nextAction()},600)}
+  else{showPlayerActions(cur)}
+}
+
+function allCalledOrFolded(){
+  const active=players.filter(p=>!p.folded&&!p.allIn&&p.chips>0)
+  return active.every(p=>p.bet===currentBet||p.chips===0)
+}
+
+function botAction(bot){
+  const ev=community.length>=3?bestHand(bot.hole,community):null
+  const strength=ev?ev.cat:Math.random()*4|0
+  const toCall=currentBet-bot.bet
+  if(toCall>bot.chips){foldOrCall(bot,true);return}
+  if(strength>=6&&Math.random()<.7){doRaise(bot,Math.min(BB*3,bot.chips))}
+  else if(strength>=3||toCall===0){foldOrCall(bot,true)}
+  else if(Math.random()<.35){foldOrCall(bot,true)}
+  else{bot.folded=true}
+  render()
+}
+
+function foldOrCall(p,call){
+  if(call){const n=Math.min(currentBet-p.bet,p.chips);p.chips-=n;p.bet+=n;pot+=n}
+  else p.folded=true
+}
+
+function doRaise(p,extraAboveCall){
+  const toCall=currentBet-p.bet
+  const total=toCall+extraAboveCall
+  const n=Math.min(total,p.chips)
+  p.chips-=n;p.bet+=n;pot+=n
+  currentBet=p.bet
+  if(p.chips===0)p.allIn=true
+}
+
+function playerFold(){hideBtns();players[0].folded=true;actionIdx++;nextAction()}
+function playerCall(){
+  hideBtns()
+  const p=players[0],n=Math.min(currentBet-p.bet,p.chips)
+  p.chips-=n;p.bet+=n;pot+=n
+  if(p.chips===0)p.allIn=true
+  actionIdx++;nextAction()
+}
+function playerCheck(){hideBtns();actionIdx++;nextAction()}
+function playerRaise(){
+  const amt=parseInt(document.getElementById('raise-in').value)||BB
+  hideBtns()
+  doRaise(players[0],Math.max(amt,BB))
+  if(players[0].chips===0)players[0].allIn=true
+  actionIdx++;nextAction()
+}
+
+function hideBtns(){document.getElementById('action-btns').innerHTML='';render()}
+
+function showPlayerActions(p){
+  const toCall=currentBet-p.bet
+  const canCheck=toCall===0
+  let html=''
+  html+=`<button class="btn-fold" onclick="playerFold()">Fold</button>`
+  if(canCheck)html+=`<button class="btn-check" onclick="playerCheck()">Check</button>`
+  else html+=`<button class="btn-call" onclick="playerCall()">Call $${Math.min(toCall,p.chips)}</button>`
+  if(p.chips>toCall)
+    html+=`<div class="raise-row"><input id="raise-in" type="number" value="${BB}" min="${BB}" max="${p.chips-toCall}" step="${BB}"><button class="btn-raise" onclick="playerRaise()">Raise</button></div>`
+  document.getElementById('action-btns').innerHTML=html
+  render()
+}
+
+// ── Streets ───────────────────────────────────────────────────
+function advanceStreet(){
+  for(const p of players)p.bet=0
+  currentBet=0
+
+  if(street==='preflop'){street='flop';community.push(deck.pop(),deck.pop(),deck.pop())}
+  else if(street==='flop'){street='turn';community.push(deck.pop())}
+  else if(street==='turn'){street='river';community.push(deck.pop())}
+  else{showdown();return}
+
+  const firstAct=players.findIndex(p=>!p.folded&&!p.allIn&&p.chips>0)
+  actionIdx=firstAct===-1?0:firstAct
+  render()
+  nextAction()
+}
+
+function showdown(){
+  const alive=players.filter(p=>!p.folded)
+  if(alive.length===1){awardPot([alive[0]]);return}
+  let best=null
+  const evals=alive.map(p=>({p,ev:bestHand(p.hole,community)}))
+  for(const x of evals){if(!best||compareEval(x.ev,best.ev)>0)best=x}
+  const winners=evals.filter(x=>compareEval(x.ev,best.ev)===0).map(x=>x.p)
+  awardPot(winners)
+}
+
+function awardPot(winners){
+  gameOver=true
+  const share=Math.floor(pot/winners.length)
+  for(const w of winners)w.chips+=share
+  const names=winners.map(w=>w.name).join(' & ')
+  const handName=winners.length?HAND_NAMES[bestHand(winners[0].hole,community).cat]:'?'
+  const youWon=winners.some(w=>!w.isBot)
+  msg(`${names} win${winners.length>1?'':'s'} with ${handName}!${youWon?' 🎉':''}`)
+  // reveal all hole cards
+  render(true)
+  const youAlive=players.find(p=>!p.isBot&&p.chips>0)
+  document.getElementById('action-btns').innerHTML=
+    youAlive?`<button class="btn-new" onclick="dealerIdx++;newHand()">Next Hand</button>`
+            :`<button class="btn-new" onclick="startGame()">New Game</button>`
+}
+
+function endGame(){
+  const you=players.find(p=>!p.isBot)
+  msg(you&&you.chips>0?'You won the table! 🏆':'Broke! Game over.')
+  document.getElementById('action-btns').innerHTML=`<button class="btn-new" onclick="startGame()">New Game</button>`
+  render()
+}
+
+// ── Render ────────────────────────────────────────────────────
+function cardHTML(c,hidden){
+  if(hidden)return'<div class="card back"></div>'
+  if(!c)return'<div class="hidden-card"></div>'
+  const r=isRed(c)?'red':''
+  return`<div class="card ${r}"><span class="tl">${c.v}<br>${c.s}</span><span class="suit-c">${c.s}</span><span class="br">${c.v}<br>${c.s}</span></div>`
+}
+
+function render(revealAll=false){
+  // community
+  const streetNames={preflop:'Pre-Flop',flop:'Flop',turn:'Turn',river:'River',showdown:'Showdown'}
+  document.getElementById('street-label').textContent=streetNames[street]||''
+  const cc=document.getElementById('community-cards')
+  cc.innerHTML=community.map(c=>cardHTML(c)).join('')
+  document.getElementById('pot').textContent='$'+pot
+
+  // your cards
+  const you=players[0]
+  document.getElementById('your-cards').innerHTML=(you?.hole||[]).map(c=>cardHTML(c,false)).join('')
+  document.getElementById('your-chips').textContent='$'+(you?.chips||0)
+  document.getElementById('your-bet').textContent='$'+(you?.bet||0)
+
+  // bots
+  const botsEl=document.getElementById('bots-row')
+  botsEl.innerHTML=players.slice(1).map(p=>{
+    const reveal=revealAll&&!p.folded
+    const isActive=!gameOver&&players[actionIdx%players.length]===p
+    const cards=(p.hole||[]).map(c=>cardHTML(c,!reveal)).join('')
+    return`<div class="player-area ${p.folded?'folded':''} ${isActive?'active-ring':''}">
+      <div class="pname">${p.name}</div>
+      <div class="cards-row">${cards}</div>
+      <div class="pchips">$${p.chips}</div>
+      <div class="pbet">${p.bet?'Bet $'+p.bet:p.folded?'Folded':''}</div>
+    </div>`
+  }).join('')
+}
+
+function msg(t){document.getElementById('message').textContent=t}
+
+// init
+players=initPlayers()
+render()
+document.getElementById('action-btns').innerHTML=`<button class="btn-new" onclick="startGame()">Deal</button>`
+</script>
+</body>
+</html>

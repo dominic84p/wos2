@@ -19,6 +19,7 @@ const SKIP_RESP = new Set([
 const SKIP_REQ = new Set([
   'host','connection','keep-alive','upgrade-insecure-requests',
   'cf-connecting-ip','cf-ray','cf-visitor','cf-ipcountry',
+  'sec-fetch-dest','sec-fetch-mode','sec-fetch-site','sec-fetch-user',
 ])
 
 function cors() {
@@ -141,6 +142,15 @@ var _rp=(function(){try{return window.parent!==window?window.parent:null;}catch(
 try{Object.defineProperty(window,'top',{get:function(){return window;},configurable:true});}catch(e){}
 try{Object.defineProperty(window,'parent',{get:function(){return window;},configurable:true});}catch(e){}
 try{Object.defineProperty(window,'frameElement',{get:function(){return null;},configurable:true});}catch(e){}
+var _ld=Object.getOwnPropertyDescriptor(Location.prototype,'href');
+var _rHref=_ld&&_ld.get||null;
+function _rawHref(){try{return _rHref?_rHref.call(location):'';}catch(e){return T;}}
+function _realProp(p){try{var h=_rawHref(),u=new URL(h),t=u.searchParams.get('u');return t?new URL(t)[p]:new URL(T)[p];}catch(e){try{return new URL(T)[p];}catch(e2){return '';}}}
+['href','hostname','host','origin','pathname','search','hash','protocol','port'].forEach(function(p){try{var d=Object.getOwnPropertyDescriptor(Location.prototype,p);if(d&&d.get)Object.defineProperty(Location.prototype,p,Object.assign({},d,{get:function(){return _realProp(p);},configurable:true}));}catch(e){}});
+try{Object.defineProperty(document,'URL',{get:function(){return _realProp('href');},configurable:true});}catch(e){}
+try{Object.defineProperty(document,'documentURI',{get:function(){return _realProp('href');},configurable:true});}catch(e){}
+try{Object.defineProperty(document,'referrer',{get:function(){return '';},configurable:true});}catch(e){}
+try{Object.defineProperty(document,'domain',{get:function(){return _realProp('hostname');},configurable:true});}catch(e){}
 function _wn(u){try{if(_rp)_rp.postMessage({__wos:'nav',url:u},'*');}catch(e){}}
 _wn(T);
 function px(u,b){
