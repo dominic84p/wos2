@@ -3,6 +3,8 @@
 const SKIP_RESP = new Set([
   'content-security-policy','content-security-policy-report-only',
   'x-frame-options','strict-transport-security','x-content-type-options','alt-svc',
+  'cross-origin-opener-policy','cross-origin-embedder-policy','cross-origin-resource-policy',
+  'permissions-policy','feature-policy',
   'content-encoding','transfer-encoding','keep-alive','connection','te','trailers','upgrade',
 ])
 const SKIP_REQ = new Set([
@@ -11,27 +13,43 @@ const SKIP_REQ = new Set([
   'sec-fetch-dest','sec-fetch-mode','sec-fetch-site','sec-fetch-user',
 ])
 
+function getCookie(request, name) {
+  try {
+    const cookieHeader = request.headers.get('cookie') || ''
+    const match = cookieHeader.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'))
+    return match ? decodeURIComponent(match[1]) : null
+  } catch { return null }
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url)
 
     if (request.method === 'OPTIONS')
-      return new Response(null, { status: 204, headers: corsHeaders() })
+      return new Response(null, { status: 204, headers: corsHeaders(request) })
 
     if (/\/generate_204($|\?)/.test(url.pathname))
-      return new Response(null, { status: 204, headers: corsHeaders() })
+      return new Response(null, { status: 204, headers: corsHeaders(request) })
 
     let target = url.searchParams.get('u')
-    if (!target && url.pathname !== '/') target = refererTarget(request, url)
+    if (!target && url.pathname !== '/') {
+      target = refererTarget(request, url)
+      if (!target) {
+        const lastOrigin = getCookie(request, '__wos_origin')
+        if (lastOrigin) {
+          target = lastOrigin + url.pathname + url.search + url.hash
+        }
+      }
+    }
     if (!target) return landing()
     if (!target.startsWith('http')) target = 'https://' + target
 
     if (/\/generate_204($|\?)/.test(target))
-      return new Response(null, { status: 204, headers: corsHeaders() })
+      return new Response(null, { status: 204, headers: corsHeaders(request) })
 
     let targetUrl
     try { targetUrl = new URL(target) }
-    catch { return new Response('Invalid URL', { status: 400, headers: corsHeaders() }) }
+    catch { return new Response('Invalid URL', { status: 400, headers: corsHeaders(request) }) }
 
     return proxyRequest(request, targetUrl, url)
   }
@@ -53,10 +71,14 @@ async function proxyRequest(request, targetUrl, workerUrl) {
   }
   outHeaders.set('host', targetUrl.host)
   outHeaders.set('origin', targetUrl.origin)
-  outHeaders.set('sec-fetch-dest', 'document')
-  outHeaders.set('sec-fetch-mode', 'navigate')
-  outHeaders.set('sec-fetch-site', 'none')
-  outHeaders.set('sec-fetch-user', '?1')
+  
+  const dest = request.headers.get('sec-fetch-dest') || 'empty'
+  const mode = request.headers.get('sec-fetch-mode') || 'cors'
+  const site = request.headers.get('sec-fetch-site') || 'same-origin'
+  outHeaders.set('sec-fetch-dest', dest)
+  outHeaders.set('sec-fetch-mode', mode)
+  outHeaders.set('sec-fetch-site', site)
+
   // Decode proxied referer back to real URL
   try {
     const rUrl = new URL(request.headers.get('referer') || '')
@@ -72,7 +94,7 @@ async function proxyRequest(request, targetUrl, workerUrl) {
       redirect: 'manual',
     })
   } catch (e) {
-    return new Response(`Proxy error: ${e.message}`, { status: 502, headers: corsHeaders() })
+    return new Response(`Proxy error: ${e.message}`, { status: 502, headers: corsHeaders(request) })
   }
 
   // Follow redirects through proxy
@@ -86,9 +108,25 @@ async function proxyRequest(request, targetUrl, workerUrl) {
 
   const rh = new Headers()
   for (const [k, v] of resp.headers) {
-    if (!SKIP_RESP.has(k.toLowerCase())) rh.set(k, v)
+    if (!SKIP_RESP.has(k.toLowerCase()) && k.toLowerCase() !== 'set-cookie') {
+      rh.set(k, v)
+    }
   }
-  Object.entries(corsHeaders()).forEach(([k, v]) => rh.set(k, v))
+  // Rewrite Set-Cookie headers for 3rd party iframe compatibility
+  let rawCookies = []
+  if (typeof resp.headers.getSetCookie === 'function') {
+    rawCookies = resp.headers.getSetCookie()
+  }
+  if (!rawCookies || rawCookies.length === 0) {
+    const singleSc = resp.headers.get('set-cookie')
+    if (singleSc) rawCookies = splitSetCookie(singleSc)
+  }
+  for (const sc of rawCookies) {
+    const rw = rewriteSetCookie(sc)
+    if (rw) rh.append('set-cookie', rw)
+  }
+  rh.append('set-cookie', `__wos_origin=${encodeURIComponent(targetUrl.origin)}; Path=/; SameSite=None; Secure; Partitioned`)
+  Object.entries(corsHeaders(request)).forEach(([k, v]) => rh.set(k, v))
 
   const ct = resp.headers.get('content-type') ?? ''
 
@@ -121,9 +159,11 @@ async function proxyRequest(request, targetUrl, workerUrl) {
   return new Response(resp.body, { status: resp.status, headers: rh })
 }
 
-function corsHeaders() {
+function corsHeaders(request) {
+  const reqOrigin = request ? (typeof request.headers?.get === 'function' ? request.headers.get('origin') : (request.headers?.origin || request.headers?.['origin'])) : null
   return {
-    'access-control-allow-origin':   '*',
+    'access-control-allow-origin':   reqOrigin && reqOrigin !== 'null' ? reqOrigin : '*',
+    'access-control-allow-credentials': 'true',
     'access-control-allow-methods':  'GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD',
     'access-control-allow-headers':  '*',
     'access-control-expose-headers': '*',
@@ -171,11 +211,26 @@ try{Object.defineProperty(document,'URL',{get:function(){return _realProp('href'
 try{Object.defineProperty(document,'documentURI',{get:function(){return _realProp('href');},configurable:true});}catch(e){}
 try{Object.defineProperty(document,'referrer',{get:function(){return '';},configurable:true});}catch(e){}
 try{Object.defineProperty(document,'domain',{get:function(){return _realProp('hostname');},configurable:true});}catch(e){}
+try{
+  var _cd=Object.getOwnPropertyDescriptor(Document.prototype,'cookie')||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,'cookie');
+  if(_cd&&_cd.set&&_cd.get){
+    Object.defineProperty(document,'cookie',{
+      configurable:true,
+      get:function(){return _cd.get.call(document);},
+      set:function(v){
+        if(typeof v==='string'){
+          v=v.replace(/;\\s*domain=[^;]*/gi,'').replace(/;\\s*samesite=[^;]*/gi,'').replace(/;\\s*secure/gi,'')+'; SameSite=None; Secure';
+        }
+        return _cd.set.call(document,v);
+      }
+    });
+  }
+}catch(e){}
 function _wn(u){try{if(_rp)_rp.postMessage({__wos:'nav',url:u},'*');}catch(e){}}
 _wn(T);
 function px(u,b){
   if(!u||typeof u!=='string')return u;
-  if(/^(#|data:|javascript:|blob:|mailto:)/.test(u))return u;
+  if(/^(#|data:|javascript:|blob:|mailto:|about:)/.test(u))return u;
   try{var a=new URL(u,b||T);if(a.origin===W)return u;return W+'/?u='+encodeURIComponent(a.toString());}catch(e){return u;}
 }
 var _f=window.fetch;
@@ -185,7 +240,11 @@ window.fetch=function(u,o){
   return _f.call(this,u,o);
 };
 var _x=XMLHttpRequest.prototype.open;
-XMLHttpRequest.prototype.open=function(m,u){arguments[1]=px(String(u));return _x.apply(this,arguments);};
+XMLHttpRequest.prototype.open=function(m,u){
+  var args=Array.prototype.slice.call(arguments);
+  args[1]=px(String(u));
+  return _x.apply(this,args);
+};
 if(navigator.sendBeacon){var _sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return _sb(px(u),d);};}
 var _ps=history.pushState.bind(history),_rs=history.replaceState.bind(history);
 history.pushState=function(s,t,u){_ps(s,t,u?px(u):u);try{if(u){var _a=new URL(px(u),T);_wn(_a.searchParams.get('u')||String(u));}}catch(e){}};
@@ -230,11 +289,45 @@ window.WebSocket=function(u,p){
 };
 window.WebSocket.prototype=_WS.prototype;
 window.WebSocket.CONNECTING=0;window.WebSocket.OPEN=1;window.WebSocket.CLOSING=2;window.WebSocket.CLOSED=3;
+try{Object.defineProperty(location,'ancestorOrigins',{get:function(){return [];},configurable:true});}catch(e){}
+if(document.hasStorageAccess){document.hasStorageAccess=function(){return Promise.resolve(true);};}
+if(document.requestStorageAccess){document.requestStorageAccess=function(){return Promise.resolve();};}
 if('serviceWorker'in navigator){navigator.serviceWorker.register=function(){return Promise.reject(new Error('sw-blocked'));};try{navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});});}catch(e){}}
 try{Object.defineProperty(navigator,'onLine',{get:function(){return true;}});}catch(e){}
 })();
 <\/script>`, { html: true })
   }
+}
+
+function splitSetCookie(str) {
+  if (!str) return []
+  const cookies = []
+  let cur = ''
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === ',') {
+      const lower = cur.toLowerCase()
+      if (lower.includes('expires=') && !lower.slice(lower.lastIndexOf('expires=')).includes('gmt') && !lower.slice(lower.lastIndexOf('expires=')).includes('utc')) {
+        cur += ','
+      } else {
+        if (cur.trim()) cookies.push(cur.trim())
+        cur = ''
+      }
+    } else {
+      cur += str[i]
+    }
+  }
+  if (cur.trim()) cookies.push(cur.trim())
+  return cookies
+}
+
+function rewriteSetCookie(cookie) {
+  if (!cookie || typeof cookie !== 'string') return ''
+  return cookie
+    .replace(/;\s*domain=[^;]*/gi, '')
+    .replace(/;\s*samesite=[^;]*/gi, '')
+    .replace(/;\s*secure/gi, '')
+    .trim()
+    + '; SameSite=None; Secure; Partitioned'
 }
 
 function landing() {

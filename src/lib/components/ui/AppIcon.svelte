@@ -19,6 +19,7 @@
     codefolder:  '/icons/folder3d.png',
     notepad:     '/icons/notepad.png',
     paint:       '/icons/paint.png',
+    dogegagechat:'/icons/dogechat.png',
   }
 
   const GNOME_ICONS: Partial<Record<AppId, string>> = {
@@ -34,10 +35,12 @@
     codefolder:  '/icons/gnome/folder-projects.svg',
     paint:       '/icons/gnome/paint.svg',
     eaglercraft: '/icons/minecraft.png',
+    dogegagechat:'/icons/dogechat.png',
   }
 
   const EMOJI_ICONS: Partial<Record<AppId, string>> = {
     browser:     '🌐',
+    dogegagechat:'💬',
     music:       '🎵',
     settings:    '✨',
     files:       '📁',
@@ -62,6 +65,7 @@
   $: emoji    = $settings.themeId === 'aislop' ? EMOJI_ICONS[appId] : undefined
   $: src      = ($settings.themeId === 'linux' ? GNOME_ICONS[appId] : undefined) ?? ICONS[appId]
   $: symbolic = $settings.themeId === 'linux' && GNOME_SYMBOLIC.has(appId)
+  $: rounded  = appId === 'dogegagechat'
 </script>
 
 {#if emoji}
@@ -75,6 +79,7 @@
     draggable="false"
     class="app-icon"
     class:symbolic
+    class:rounded
   />
 {:else}
   <span style="font-size:{Math.round(size*0.6)}px;line-height:1">📁</span>
@@ -85,6 +90,11 @@
     object-fit: contain;
     display: block;
     flex-shrink: 0;
+  }
+
+  .app-icon.rounded {
+    border-radius: 22%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   }
 
   /* Adwaita symbolic icons are black paths — make them white on the dark linux theme */

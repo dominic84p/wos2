@@ -20,18 +20,20 @@
   import PaintApp from '../apps/PaintApp.svelte'
   import HTMLPreviewApp from '../apps/HTMLPreviewApp.svelte'
   import TerminalApp from '../apps/TerminalApp.svelte'
+  import DogegageChatApp from '../apps/DogegageChatApp.svelte'
   import type { AppId, AppMeta } from '../../types'
 
   const apps: AppMeta[] = [
-    { id: 'browser',     label: 'Browser'   },
-    { id: 'gamesfolder', label: 'Homework'  },
-    { id: 'music',       label: 'Music'     },
-    { id: 'codefolder',  label: 'Code'      },
-    { id: 'files',       label: 'Files'     },
-    { id: 'notepad',     label: 'Notepad'   },
-    { id: 'paint',       label: 'Paint'     },
-    { id: 'discover',    label: 'App Store' },
-    { id: 'settings',    label: 'Settings'  },
+    { id: 'browser',      label: 'Browser'       },
+    { id: 'dogegagechat', label: 'DogeGage Chat' },
+    { id: 'gamesfolder',  label: 'Homework'      },
+    { id: 'music',        label: 'Music'         },
+    { id: 'codefolder',   label: 'Code'          },
+    { id: 'files',        label: 'Files'         },
+    { id: 'notepad',      label: 'Notepad'       },
+    { id: 'paint',        label: 'Paint'         },
+    { id: 'discover',     label: 'App Store'     },
+    { id: 'settings',     label: 'Settings'      },
   ]
 
   function launch(app: AppMeta) {
@@ -51,6 +53,12 @@
       windows.open('terminal', 'Terminal', { width: 750, height: 480 })
       return
     }
+    if (app.id === 'dogegagechat') {
+      const existing = $windows.find(w => w.appId === 'dogegagechat')
+      if (existing) { windows.focus(existing.id); return }
+      windows.open('dogegagechat', 'DogeGage Chat', { width: 960, height: 620 })
+      return
+    }
     const existing = $windows.find(w => w.appId === app.id)
     if (existing) { windows.focus(existing.id); return }
     windows.open(app.id, app.label)
@@ -58,22 +66,23 @@
 
   function appComponent(id: AppId) {
     switch (id) {
-      case 'browser':     return BrowserApp
-      case 'music':       return MusicApp
-      case 'settings':    return SettingsApp
-      case 'discover':    return DiscoverApp
-      case 'ide':         return IDEApp
-      case 'vscode':      return VSCodeApp
-      case 'eaglercraft': return EaglerApp
-      case 'gamesfolder': return GamesFolderApp
-      case 'game':        return GameApp
-      case 'codefolder':  return CodeFolderApp
-      case 'files':       return FilesApp
-      case 'notepad':     return NotepadApp
-      case 'paint':       return PaintApp
-      case 'htmlpreview': return HTMLPreviewApp
-      case 'terminal':    return TerminalApp
-      default:            return null
+      case 'browser':      return BrowserApp
+      case 'dogegagechat': return DogegageChatApp
+      case 'music':        return MusicApp
+      case 'settings':     return SettingsApp
+      case 'discover':     return DiscoverApp
+      case 'ide':          return IDEApp
+      case 'vscode':       return VSCodeApp
+      case 'eaglercraft':  return EaglerApp
+      case 'gamesfolder':  return GamesFolderApp
+      case 'game':         return GameApp
+      case 'codefolder':   return CodeFolderApp
+      case 'files':        return FilesApp
+      case 'notepad':      return NotepadApp
+      case 'paint':        return PaintApp
+      case 'htmlpreview':  return HTMLPreviewApp
+      case 'terminal':     return TerminalApp
+      default:             return null
     }
   }
 

@@ -2,6 +2,7 @@ export type AppId =
   | 'browser' | 'games' | 'music' | 'settings' | 'files' | 'discover'
   | 'ide' | 'vscode' | 'eaglercraft' | 'gamesfolder' | 'codefolder'
   | 'game' | 'notepad' | 'paint' | 'htmlpreview' | 'terminal'
+  | 'dogegagechat'
 
 export type ThemeId = 'default' | 'midnight' | 'linux' | 'hacker' | 'aislop' | 'custom'
 export type TaskbarEdge = 'bottom' | 'top' | 'left' | 'right'

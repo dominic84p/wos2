@@ -1,320 +1,188 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
-  import { ArrowLeft, ArrowRight, RefreshCw } from 'lucide-svelte'
+  import {
+    ArrowLeft,
+    ArrowRight,
+    RotateCw,
+    Home,
+    ShieldCheck,
+  } from 'lucide-svelte'
 
   export let windowId: string = ''
 
-  const PROXY = 'https://wos-proxy.therealdominic84plays.workers.dev'
-  const proxyUrl = (url: string) => `${PROXY}/?u=${encodeURIComponent(url)}`
+  const PROXY_HOST = 'https://proxy.dogegage.xyz'
 
-  const SHORTCUTS = [
-    { label: 'TikTok',    url: 'https://www.tiktok.com',        color: '#010101', emoji: '🎵' },
-    { label: 'YouTube',   url: 'https://www.youtube.com',       color: '#ff0000', emoji: '▶' },
-    { label: 'Twitch',    url: 'https://www.twitch.tv',         color: '#9146ff', emoji: '📺' },
-    { label: 'Reddit',    url: 'https://www.reddit.com',        color: '#ff4500', emoji: '👾' },
-    { label: 'Twitter',   url: 'https://twitter.com',           color: '#1da1f2', emoji: '🐦' },
-    { label: 'Spotify',   url: 'https://open.spotify.com',      color: '#1db954', emoji: '🎧' },
-    { label: 'GitHub',    url: 'https://github.com',            color: '#24292e', emoji: '🐙' },
-    { label: 'Wikipedia', url: 'https://en.wikipedia.org',      color: '#3366cc', emoji: '📖' },
-  ]
-
-  let navHistory: string[] = []
-  let historyIdx = -1
-
-  // iframeSrc is the only thing that drives the iframe — only set on explicit user actions
-  let iframeSrc = ''
-  // displayUrl tracks the real in-page URL for the address bar (updated by postMessage)
-  let displayUrl = ''
-
-  let iframeEl: HTMLIFrameElement
-  let iframeKey = 0
+  let iframeSrc = `${PROXY_HOST}/`
   let loading = false
-  let addrVal = ''
-  let addrFocused = false
+  let iframeEl: HTMLIFrameElement
 
-  $: canBack    = historyIdx > 0
-  $: canForward = historyIdx < navHistory.length - 1
-  $: if (!addrFocused) addrVal = displayUrl
-
-  function normUrl(raw: string): string {
-    let t = raw.trim()
-    if (!t) return ''
-    if (!t.startsWith('http://') && !t.startsWith('https://')) {
-      t = t.includes(' ') || !t.includes('.')
-        ? `https://duckduckgo.com/?q=${encodeURIComponent(t)}`
-        : 'https://' + t
-    }
-    return t
-  }
-
-  function navigate(raw: string, push = true) {
-    const t = normUrl(raw)
-    if (!t) return
-    if (push) {
-      navHistory = [...navHistory.slice(0, historyIdx + 1), t]
-      historyIdx = navHistory.length - 1
-    }
-    displayUrl = t
-    iframeSrc = proxyUrl(t)
+  function goHome() {
     loading = true
+    if (iframeEl) {
+      iframeEl.src = `${PROXY_HOST}/?t=${Date.now()}`
+    }
   }
 
   function goBack() {
-    if (!canBack) return
-    historyIdx--
-    displayUrl = navHistory[historyIdx]
-    iframeSrc = proxyUrl(navHistory[historyIdx])
-    loading = true
+    try {
+      iframeEl?.contentWindow?.history.back()
+    } catch {}
   }
 
   function goForward() {
-    if (!canForward) return
-    historyIdx++
-    displayUrl = navHistory[historyIdx]
-    iframeSrc = proxyUrl(navHistory[historyIdx])
-    loading = true
+    try {
+      iframeEl?.contentWindow?.history.forward()
+    } catch {}
   }
 
   function refresh() {
-    if (!iframeSrc) return
-    loading = true
-    iframeKey++
-  }
-
-  function onAddrFocus(e: FocusEvent) {
-    addrFocused = true
-    addrVal = displayUrl
-    setTimeout(() => (e.target as HTMLInputElement)?.select(), 0)
-  }
-
-  function onAddrBlur() { addrFocused = false }
-
-  function onAddrKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      navigate(addrVal)
-      ;(e.target as HTMLInputElement).blur()
-    }
-    if (e.key === 'Escape') {
-      addrVal = displayUrl
-      ;(e.target as HTMLInputElement).blur()
+    if (iframeEl) {
+      loading = true
+      iframeEl.src = `${PROXY_HOST}/?t=${Date.now()}`
     }
   }
 
-  function onMessage(e: MessageEvent) {
-    if (e.data?.__wos === 'nav' && typeof e.data.url === 'string') {
-      displayUrl = e.data.url
-    }
+  function onIframeLoad() {
+    loading = false
   }
-
-  function onFullscreenChange() {
-    const fs = document.fullscreenElement
-    if (fs && iframeEl && (fs === iframeEl || iframeEl.contains(fs))) iframeEl.focus()
-  }
-
-  onMount(() => {
-    window.addEventListener('message', onMessage)
-    document.addEventListener('fullscreenchange', onFullscreenChange)
-  })
-  onDestroy(() => {
-    window.removeEventListener('message', onMessage)
-    document.removeEventListener('fullscreenchange', onFullscreenChange)
-  })
 </script>
 
-<div class="browser">
-  <div class="toolbar">
-    <button class="nav-btn" class:disabled={!canBack}    on:click={goBack}    title="Back"><ArrowLeft  size={15} /></button>
-    <button class="nav-btn" class:disabled={!canForward} on:click={goForward} title="Forward"><ArrowRight size={15} /></button>
-    <button class="nav-btn" class:spin={loading}         on:click={refresh}   title="Refresh"><RefreshCw  size={13} /></button>
+<div class="browser-window">
+  <!-- Minimal Top Toolbar with 5px corners -->
+  <div class="top-toolbar">
+    <div class="nav-group">
+      <button class="tool-btn" on:click={goBack} title="Back">
+        <ArrowLeft size={15} />
+      </button>
+      <button class="tool-btn" on:click={goForward} title="Forward">
+        <ArrowRight size={15} />
+      </button>
+      <button class="tool-btn" class:spin={loading} on:click={refresh} title="Reload">
+        <RotateCw size={13} />
+      </button>
+      <button class="tool-btn" on:click={goHome} title="Home">
+        <Home size={14} />
+      </button>
+    </div>
 
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <input
-      class="addr-bar"
-      type="text"
-      spellcheck="false"
-      autocomplete="off"
-      placeholder="Search or enter URL..."
-      bind:value={addrVal}
-      on:focus={onAddrFocus}
-      on:blur={onAddrBlur}
-      on:keydown={onAddrKeydown}
-    />
+    <div class="app-title-badge">
+      <span class="app-title">shit proxy</span>
+    </div>
+
+    <div class="status-chip" title="Connected to Scramjet Wisp & Cloudflare WARP">
+      <ShieldCheck size={13} />
+      <span>WARP Active</span>
+      <span class="dot"></span>
+    </div>
   </div>
 
-  {#if iframeSrc}
-    {#key iframeKey}
-      <iframe
-        bind:this={iframeEl}
-        src={iframeSrc}
-        title="Browser"
-        allow="autoplay; fullscreen"
-        on:load={() => (loading = false)}
-      ></iframe>
-    {/key}
-  {:else}
-    <div class="newtab">
-      <div class="nt-search-wrap">
-        <input
-          class="nt-search"
-          placeholder="Search or enter URL..."
-          spellcheck="false"
-          autocomplete="off"
-          on:keydown={(e) => { if (e.key === 'Enter') navigate((e.target as HTMLInputElement).value) }}
-        />
-      </div>
-      <div class="tiles">
-        {#each SHORTCUTS as s}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div class="tile" on:click={() => navigate(s.url)}>
-            <div class="tile-icon" style="background:{s.color}">{s.emoji}</div>
-            <span class="tile-label">{s.label}</span>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
+  <!-- Browser Frame -->
+  <div class="browser-body">
+    <iframe
+      bind:this={iframeEl}
+      src={iframeSrc}
+      class="browser-frame"
+      title="shit proxy"
+      allow="autoplay; fullscreen; clipboard-read; clipboard-write; camera; microphone; geolocation"
+      on:load={onIframeLoad}
+    ></iframe>
+  </div>
 </div>
 
 <style>
-  .browser {
+  .browser-window {
     display: flex;
     flex-direction: column;
+    width: 100%;
     height: 100%;
-    background: #1a1a1a;
+    background: #18181b;
+    color: #f4f4f5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    user-select: none;
+    overflow: hidden;
   }
 
-  /* ── Toolbar ── */
-  .toolbar {
+  /* Top Toolbar with 5px corners */
+  .top-toolbar {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 5px 8px;
-    background: #2a2a2a;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: #202024;
+    border-bottom: 1px solid #2e2e33;
     flex-shrink: 0;
   }
 
-  .nav-btn {
-    width: 30px;
+  .nav-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .tool-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
     height: 28px;
+    border-radius: 5px;
     border: none;
     background: transparent;
-    color: rgba(255,255,255,0.55);
-    border-radius: 5px;
+    color: #a1a1aa;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.1s, color 0.1s;
-    flex-shrink: 0;
+    transition: background 0.12s ease, color 0.12s ease;
   }
-  .nav-btn:hover:not(.disabled) { background: rgba(255,255,255,0.1); color: #fff; }
-  .nav-btn.disabled { opacity: 0.28; cursor: default; pointer-events: none; }
+  .tool-btn:hover {
+    background: #2e2e33;
+    color: #f4f4f5;
+  }
 
-  .addr-bar {
-    flex: 1;
-    height: 28px;
-    padding: 0 10px;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 6px;
-    color: rgba(255,255,255,0.85);
+  .spin {
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    100% { transform: rotate(360deg); }
+  }
+
+  .app-title-badge {
     font-size: 13px;
-    font-family: inherit;
-    outline: none;
-    transition: background 0.1s, border-color 0.1s;
-    min-width: 0;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: #f4f4f5;
+    text-transform: lowercase;
   }
-  .addr-bar:focus {
-    background: rgba(255,255,255,0.09);
-    border-color: rgba(0,120,212,0.6);
-  }
-  .addr-bar::placeholder { color: rgba(255,255,255,0.25); }
 
-  /* ── Iframe ── */
-  iframe {
+  .status-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: #242429;
+    border: 1px solid #2e2e33;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #a1a1aa;
+  }
+  .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 5px #4ade80;
+  }
+
+  .browser-body {
     flex: 1;
-    border: none;
-    width: 100%;
-    background: #fff;
-  }
-
-  /* ── New tab page ── */
-  .newtab {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 40px;
-    background: #141414;
-    padding: 24px;
-    overflow-y: auto;
-  }
-
-  .nt-search-wrap { width: 100%; max-width: 520px; }
-
-  .nt-search {
-    width: 100%;
-    padding: 12px 18px;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 24px;
-    color: #fff;
-    font-size: 15px;
-    font-family: inherit;
-    outline: none;
-    transition: border-color 0.15s, background 0.15s;
-    box-sizing: border-box;
-  }
-  .nt-search:focus {
-    border-color: rgba(0,120,212,0.6);
-    background: rgba(255,255,255,0.09);
-  }
-  .nt-search::placeholder { color: rgba(255,255,255,0.3); }
-
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    width: 100%;
-    max-width: 440px;
-  }
-
-  .tile {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    padding: 10px 6px;
-    border-radius: 10px;
-    transition: background 0.12s;
-  }
-  .tile:hover { background: rgba(255,255,255,0.07); }
-
-  .tile-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    flex-shrink: 0;
-  }
-
-  .tile-label {
-    font-size: 12px;
-    color: rgba(255,255,255,0.6);
-    white-space: nowrap;
+    position: relative;
     overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 64px;
+    background: #18181b;
   }
 
-  :global(.spin) { animation: spin 0.7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .browser-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    background: #18181b;
+  }
 </style>

@@ -14,17 +14,21 @@ const PORT   = process.env.PORT || 8080
 const SKIP_RESP = new Set([
   'content-security-policy','content-security-policy-report-only',
   'x-frame-options','strict-transport-security','x-content-type-options','alt-svc',
+  'cross-origin-opener-policy','cross-origin-embedder-policy','cross-origin-resource-policy',
+  'permissions-policy','feature-policy',
   'transfer-encoding','keep-alive','connection','te','trailers','upgrade',
 ])
 const SKIP_REQ = new Set([
   'host','connection','keep-alive','upgrade-insecure-requests',
-  'cf-connecting-ip','cf-ray','cf-visitor','cf-ipcountry',
+  'cf-connecting-ip','cf-ray','cf-visitor','cf-ipcountry','x-forwarded-for','x-real-ip',
   'sec-fetch-dest','sec-fetch-mode','sec-fetch-site','sec-fetch-user',
 ])
 
-function cors() {
+function cors(req) {
+  const reqOrigin = req ? (req.headers?.['origin'] || req.headers?.['Origin']) : null
   return {
-    'access-control-allow-origin':  '*',
+    'access-control-allow-origin':  reqOrigin && reqOrigin !== 'null' ? reqOrigin : '*',
+    'access-control-allow-credentials': 'true',
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD',
     'access-control-allow-headers': '*',
     'access-control-expose-headers':'*',
@@ -151,11 +155,26 @@ try{Object.defineProperty(document,'URL',{get:function(){return _realProp('href'
 try{Object.defineProperty(document,'documentURI',{get:function(){return _realProp('href');},configurable:true});}catch(e){}
 try{Object.defineProperty(document,'referrer',{get:function(){return '';},configurable:true});}catch(e){}
 try{Object.defineProperty(document,'domain',{get:function(){return _realProp('hostname');},configurable:true});}catch(e){}
+try{
+  var _cd=Object.getOwnPropertyDescriptor(Document.prototype,'cookie')||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,'cookie');
+  if(_cd&&_cd.set&&_cd.get){
+    Object.defineProperty(document,'cookie',{
+      configurable:true,
+      get:function(){return _cd.get.call(document);},
+      set:function(v){
+        if(typeof v==='string'){
+          v=v.replace(/;\\s*domain=[^;]*/gi,'').replace(/;\\s*samesite=[^;]*/gi,'').replace(/;\\s*secure/gi,'')+'; SameSite=None; Secure';
+        }
+        return _cd.set.call(document,v);
+      }
+    });
+  }
+}catch(e){}
 function _wn(u){try{if(_rp)_rp.postMessage({__wos:'nav',url:u},'*');}catch(e){}}
 _wn(T);
 function px(u,b){
   if(!u||typeof u!=='string')return u;
-  if(/^(#|data:|javascript:|blob:|mailto:)/.test(u))return u;
+  if(/^(#|data:|javascript:|blob:|mailto:|about:)/.test(u))return u;
   try{var a=new URL(u,b||T);if(a.origin===W)return u;return W+'/?u='+encodeURIComponent(a.toString());}catch(e){return u;}
 }
 var _f=window.fetch;
@@ -165,7 +184,11 @@ window.fetch=function(u,o){
   return _f.call(this,u,o);
 };
 var _x=XMLHttpRequest.prototype.open;
-XMLHttpRequest.prototype.open=function(m,u){arguments[1]=px(String(u));return _x.apply(this,arguments);};
+XMLHttpRequest.prototype.open=function(m,u){
+  var args=Array.prototype.slice.call(arguments);
+  args[1]=px(String(u));
+  return _x.apply(this,args);
+};
 if(navigator.sendBeacon){var _sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){return _sb(px(u),d);};}
 var _ps=history.pushState.bind(history),_rs=history.replaceState.bind(history);
 history.pushState=function(s,t,u){_ps(s,t,u?px(u):u);try{if(u){var _a=new URL(px(u),T);_wn(_a.searchParams.get('u')||String(u));}}catch(e){}};
@@ -207,10 +230,44 @@ window.WebSocket=function(u,p){
 };
 window.WebSocket.prototype=_WS.prototype;
 window.WebSocket.CONNECTING=0;window.WebSocket.OPEN=1;window.WebSocket.CLOSING=2;window.WebSocket.CLOSED=3;
+try{Object.defineProperty(location,'ancestorOrigins',{get:function(){return [];},configurable:true});}catch(e){}
+if(document.hasStorageAccess){document.hasStorageAccess=function(){return Promise.resolve(true);};}
+if(document.requestStorageAccess){document.requestStorageAccess=function(){return Promise.resolve();};}
 if('serviceWorker'in navigator){navigator.serviceWorker.register=function(){return Promise.reject(new Error('sw-blocked'));};try{navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});});}catch(e){}}
 try{Object.defineProperty(navigator,'onLine',{get:function(){return true;}});}catch(e){}
 })();
 <\/script>`
+}
+
+function splitSetCookie(str) {
+  if (!str) return []
+  const cookies = []
+  let cur = ''
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === ',') {
+      const lower = cur.toLowerCase()
+      if (lower.includes('expires=') && !lower.slice(lower.lastIndexOf('expires=')).includes('gmt') && !lower.slice(lower.lastIndexOf('expires=')).includes('utc')) {
+        cur += ','
+      } else {
+        if (cur.trim()) cookies.push(cur.trim())
+        cur = ''
+      }
+    } else {
+      cur += str[i]
+    }
+  }
+  if (cur.trim()) cookies.push(cur.trim())
+  return cookies
+}
+
+function rewriteSetCookie(cookie) {
+  if (!cookie || typeof cookie !== 'string') return ''
+  return cookie
+    .replace(/;\s*domain=[^;]*/gi, '')
+    .replace(/;\s*samesite=[^;]*/gi, '')
+    .replace(/;\s*secure/gi, '')
+    .trim()
+    + '; SameSite=None; Secure; Partitioned'
 }
 
 // ── HTTP proxy ────────────────────────────────────────────────────────────────
@@ -219,7 +276,7 @@ app.get('/ping',   (_, res) => res.send('pong'))
 
 app.use(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    Object.entries(cors()).forEach(([k,v]) => res.setHeader(k,v))
+    Object.entries(cors(req)).forEach(([k,v]) => res.setHeader(k,v))
     res.status(204).end(); return
   }
 
@@ -229,7 +286,7 @@ app.use(async (req, res) => {
 
   // Bare-path connectivity pings (no ?u=, no referer needed)
   if (/\/generate_204($|\?)/.test(req.url)) {
-    Object.entries(cors()).forEach(([k,v]) => res.setHeader(k,v))
+    Object.entries(cors(req)).forEach(([k,v]) => res.setHeader(k,v))
     res.status(204).end(); return
   }
 
@@ -237,7 +294,7 @@ app.use(async (req, res) => {
   try { reqUrl = new URL(req.url, `${proto}://${host}`) }
   catch {
     try { reqUrl = new URL(req.url.replace(/[{}|\\^`\s]/g, c => encodeURIComponent(c)), `${proto}://${host}`) }
-    catch { Object.entries(cors()).forEach(([k,v]) => res.setHeader(k,v)); res.status(200).end(); return }
+    catch { Object.entries(cors(req)).forEach(([k,v]) => res.setHeader(k,v)); res.status(200).end(); return }
   }
 
   let target = reqUrl.searchParams.get('u')
@@ -247,7 +304,7 @@ app.use(async (req, res) => {
 
   // Also intercept when generate_204 comes through as a proxied target URL
   if (/\/generate_204($|\?)/.test(target)) {
-    Object.entries(cors()).forEach(([k,v]) => res.setHeader(k,v))
+    Object.entries(cors(req)).forEach(([k,v]) => res.setHeader(k,v))
     res.status(204).end(); return
   }
 
@@ -261,12 +318,18 @@ app.use(async (req, res) => {
     ;({ resp, finalUrl } = await fetch_(target, req.method, outHdrs, req))
   } catch (e) { res.status(502).send(`Proxy error: ${e.message}`); return }
 
-  // Build response headers — only strip security headers, keep everything else
+  // Build response headers — only strip security headers, rewrite cookies for iframe support
   const rh = {}
   for (const [k,v] of Object.entries(resp.headers)) {
-    if (!SKIP_RESP.has(k.toLowerCase())) rh[k] = v
+    if (!SKIP_RESP.has(k.toLowerCase())) {
+      if (k.toLowerCase() === 'set-cookie') {
+        rh[k] = Array.isArray(v) ? v.map(rewriteSetCookie) : rewriteSetCookie(v)
+      } else {
+        rh[k] = v
+      }
+    }
   }
-  Object.assign(rh, cors())
+  Object.assign(rh, cors(req))
 
   const ct = (resp.headers['content-type'] || '').toLowerCase()
 

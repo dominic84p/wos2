@@ -1,0 +1,20 @@
+{
+  "name": "wos-remote-browser-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Ultra-efficient Server-Side Remote Chromium Streaming Engine for WOS (TypeScript)",
+  "main": "remote-browser-server.ts",
+  "scripts": {
+    "start": "bun run remote-browser-server.ts"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "bun-types": "latest",
+    "typescript": "^5.7.0"
+  }
+}
