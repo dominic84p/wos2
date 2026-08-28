@@ -5,7 +5,7 @@
 
   let iframeEl: HTMLIFrameElement
 
-  const CHAT_URL = 'https://proxy.dogegage.xyz/?url=https://chat.dogegage.xyz'
+  const CHAT_URL = 'https://learning.dogegage.xyz/?url=https://chat.dogegage.xyz'
 
   function onFullscreenChange() {
     const fs = document.fullscreenElement

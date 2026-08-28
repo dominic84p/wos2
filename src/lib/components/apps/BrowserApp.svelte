@@ -11,6 +11,9 @@
     Zap,
     Lock,
     X,
+    Minus,
+    Plus,
+    RotateCcw,
   } from 'lucide-svelte'
 
   export let windowId: string = ''
@@ -20,6 +23,39 @@
   let iframeSrc = `${PROXY_HOST}/`
   let loading = false
   let iframeEl: HTMLIFrameElement
+
+  // Render scale / zoom controls
+  let renderScale: number = 1.0
+  const SCALE_STEPS = [0.5, 0.67, 0.75, 0.85, 0.9, 1.0, 1.1, 1.25, 1.5]
+  let showZoomMenu = false
+
+  function zoomOut() {
+    const currentIndex = SCALE_STEPS.findIndex((s) => s >= renderScale)
+    if (currentIndex > 0) {
+      renderScale = SCALE_STEPS[currentIndex - 1]
+    } else {
+      renderScale = Math.max(0.3, +(renderScale - 0.1).toFixed(2))
+    }
+  }
+
+  function zoomIn() {
+    const currentIndex = SCALE_STEPS.findIndex((s) => s > renderScale)
+    if (currentIndex !== -1) {
+      renderScale = SCALE_STEPS[currentIndex]
+    } else {
+      renderScale = Math.min(2.0, +(renderScale + 0.1).toFixed(2))
+    }
+  }
+
+  function resetZoom() {
+    renderScale = 1.0
+    showZoomMenu = false
+  }
+
+  function setScale(val: number) {
+    renderScale = val
+    showZoomMenu = false
+  }
 
   interface CloakPreset {
     id: string
@@ -131,6 +167,18 @@
       e.preventDefault()
       window.location.href = panicUrl
     }
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault()
+        zoomOut()
+      } else if (e.key === '=' || e.key === '+') {
+        e.preventDefault()
+        zoomIn()
+      } else if (e.key === '0') {
+        e.preventDefault()
+        resetZoom()
+      }
+    }
   }
 
   onMount(() => {
@@ -159,6 +207,31 @@
       <button class="tool-btn" on:click={goHome} title="Home">
         <Home size={14} />
       </button>
+
+      <div class="divider"></div>
+
+      <!-- Render Scale / Zoom Toggle -->
+      <div class="zoom-controls">
+        <button class="tool-btn-sm" on:click={zoomOut} title="Zoom Out (Ctrl -)">
+          <Minus size={12} />
+        </button>
+        <button
+          class="zoom-badge"
+          class:scaled={renderScale !== 1}
+          on:click={() => (showZoomMenu = !showZoomMenu)}
+          title="Render Scale Presets"
+        >
+          {Math.round(renderScale * 100)}%
+        </button>
+        <button class="tool-btn-sm" on:click={zoomIn} title="Zoom In (Ctrl +)">
+          <Plus size={12} />
+        </button>
+        {#if renderScale !== 1}
+          <button class="tool-btn-sm reset-btn" on:click={resetZoom} title="Reset to 100% (Ctrl 0)">
+            <RotateCcw size={11} />
+          </button>
+        {/if}
+      </div>
     </div>
 
     <div class="app-title-badge">
@@ -190,6 +263,34 @@
       </div>
     </div>
   </div>
+
+  <!-- Zoom Presets Dropdown Panel -->
+  {#if showZoomMenu}
+    <div class="zoom-overlay" on:click={() => (showZoomMenu = false)}>
+      <div class="zoom-menu" on:click|stopPropagation>
+        <div class="zoom-header">
+          <span>Render Scale / Zoom</span>
+          <button class="close-btn" on:click={() => (showZoomMenu = false)}>
+            <X size={13} />
+          </button>
+        </div>
+        <div class="zoom-grid">
+          {#each [0.5, 0.67, 0.75, 0.85, 1.0, 1.25, 1.5] as scale}
+            <button
+              class="zoom-item"
+              class:selected={renderScale === scale}
+              on:click={() => setScale(scale)}
+            >
+              <span class="zoom-pct">{Math.round(scale * 100)}%</span>
+              <span class="zoom-hint">
+                {scale === 0.5 ? 'Ultra Wide' : scale === 0.75 ? 'Dense UI' : scale === 1 ? 'Default' : scale === 1.25 ? 'Large' : ''}
+              </span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <!-- Stealth Cloak Dropdown Panel -->
   {#if showCloakMenu}
@@ -246,13 +347,14 @@
     </div>
   {/if}
 
-  <!-- Browser Frame -->
+  <!-- Browser Frame with High-DPI Virtual Viewport Scaling -->
   <div class="browser-body">
     <iframe
       bind:this={iframeEl}
       src={iframeSrc}
       class="browser-frame"
-      title="shit proxy"
+      style="width: {renderScale === 1 ? '100%' : `calc(100% / ${renderScale})`}; height: {renderScale === 1 ? '100%' : `calc(100% / ${renderScale})`}; transform: {renderScale === 1 ? 'none' : `scale(${renderScale})`}; transform-origin: 0 0;"
+      title="Learning Hub"
       allow="autoplay; fullscreen; clipboard-read; clipboard-write; camera; microphone; geolocation"
       on:load={onIframeLoad}
     ></iframe>
@@ -313,6 +415,135 @@
   .tool-btn:hover {
     background: #2e2e33;
     color: #f4f4f5;
+  }
+
+  .divider {
+    width: 1px;
+    height: 18px;
+    background: #2e2e33;
+    margin: 0 4px;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: #242429;
+    border: 1px solid #2e2e33;
+    border-radius: 5px;
+    padding: 1px 2px;
+  }
+
+  .tool-btn-sm {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: #a1a1aa;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .tool-btn-sm:hover {
+    background: #2e2e33;
+    color: #f4f4f5;
+  }
+
+  .reset-btn {
+    color: #f59e0b;
+  }
+
+  .zoom-badge {
+    background: transparent;
+    border: none;
+    font-size: 11px;
+    font-weight: 700;
+    color: #d4d4d8;
+    padding: 0 4px;
+    cursor: pointer;
+    min-width: 34px;
+    text-align: center;
+    border-radius: 3px;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .zoom-badge:hover {
+    background: #2e2e33;
+    color: #f4f4f5;
+  }
+  .zoom-badge.scaled {
+    color: #38bdf8;
+  }
+
+  /* Zoom Overlay & Menu */
+  .zoom-overlay {
+    position: absolute;
+    top: 40px;
+    left: 140px;
+    z-index: 1000;
+  }
+
+  .zoom-menu {
+    width: 200px;
+    background: #202024;
+    border: 1px solid #2e2e33;
+    border-radius: 5px;
+    padding: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .zoom-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 700;
+    color: #f4f4f5;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #2e2e33;
+  }
+
+  .zoom-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .zoom-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    background: #242429;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+  .zoom-item:hover {
+    background: #2e2e33;
+    border-color: #3f3f46;
+  }
+  .zoom-item.selected {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38bdf8;
+  }
+
+  .zoom-pct {
+    font-size: 11px;
+    font-weight: 700;
+    color: #f4f4f5;
+  }
+
+  .zoom-hint {
+    font-size: 10px;
+    color: #71717a;
+    font-weight: 500;
   }
 
   .cloak-btn {
