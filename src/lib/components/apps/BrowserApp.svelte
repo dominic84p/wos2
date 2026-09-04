@@ -20,9 +20,20 @@
 
   const PROXY_HOST = 'https://learning.dogegage.xyz'
 
-  let iframeSrc = `${PROXY_HOST}/`
+  let selectedTransport: string = (typeof localStorage !== 'undefined' && localStorage.getItem('wos_proxy_transport')) || 'bare'
+  let iframeSrc = `${PROXY_HOST}/?transport=${selectedTransport}`
   let loading = false
   let iframeEl: HTMLIFrameElement
+
+  function handleTransportChange() {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('wos_proxy_transport', selectedTransport)
+    }
+    loading = true
+    if (iframeEl) {
+      iframeEl.src = `${PROXY_HOST}/?transport=${selectedTransport}&t=${Date.now()}`
+    }
+  }
 
   // Render scale / zoom controls
   let renderScale: number = 1.0
@@ -83,7 +94,7 @@
   function goHome() {
     loading = true
     if (iframeEl) {
-      iframeEl.src = `${PROXY_HOST}/?t=${Date.now()}`
+      iframeEl.src = `${PROXY_HOST}/?transport=${selectedTransport}&t=${Date.now()}`
     }
   }
 
@@ -102,7 +113,7 @@
   function refresh() {
     if (iframeEl) {
       loading = true
-      iframeEl.src = `${PROXY_HOST}/?t=${Date.now()}`
+      iframeEl.src = `${PROXY_HOST}/?transport=${selectedTransport}&t=${Date.now()}`
     }
   }
 
@@ -256,9 +267,17 @@
         <span>Cloak</span>
       </button>
 
-      <div class="status-chip" title="Connected to Scramjet Wisp & Cloudflare WARP">
+      <div class="transport-control" title="Proxy Backend Transport">
         <ShieldCheck size={13} />
-        <span>WARP Active</span>
+        <select
+          class="transport-select"
+          bind:value={selectedTransport}
+          on:change={handleTransportChange}
+        >
+          <option value="bare">Bare</option>
+          <option value="libcurl">Wisp (Libcurl)</option>
+          <option value="epoxy">Wisp (Epoxy)</option>
+        </select>
         <span class="dot"></span>
       </div>
     </div>
@@ -586,17 +605,36 @@
     text-transform: lowercase;
   }
 
-  .status-chip {
+  .transport-control {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: 5px;
+    padding: 3px 8px;
     background: #242429;
     border: 1px solid #2e2e33;
     border-radius: 5px;
     font-size: 11px;
     font-weight: 600;
     color: #a1a1aa;
+    transition: border-color 0.12s ease;
+  }
+  .transport-control:hover {
+    border-color: #3f3f46;
+  }
+  .transport-select {
+    background: transparent;
+    border: none;
+    color: #f4f4f5;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    padding: 0;
+    font-family: inherit;
+  }
+  .transport-select option {
+    background: #202024;
+    color: #f4f4f5;
   }
   .dot {
     width: 5px;
