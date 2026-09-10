@@ -8,22 +8,141 @@
     ShieldCheck,
     ExternalLink,
     EyeOff,
+    Cookie,
     Zap,
     Lock,
     X,
     Minus,
     Plus,
     RotateCcw,
+    Check,
   } from 'lucide-svelte'
 
   export let windowId: string = ''
 
   const PROXY_HOST = 'https://learning.dogegage.xyz'
 
-  let selectedTransport: string = (typeof localStorage !== 'undefined' && localStorage.getItem('wos_proxy_transport')) || 'bare'
+  let selectedTransport: string = (typeof localStorage !== 'undefined' && localStorage.getItem('wos_proxy_transport')) || 'libcurl'
   let iframeSrc = `${PROXY_HOST}/?transport=${selectedTransport}`
   let loading = false
   let iframeEl: HTMLIFrameElement
+
+  // Cookie Importer State
+  let showCookieModal = false
+  let cookieInput = ''
+  let cookieStatusMsg = ''
+  let cookieStatusType: 'success' | 'error' | '' = ''
+
+  function parseCookies(input: string): Array<{ name: string; value: string; domain?: string; path?: string }> {
+    const trimmed = input.trim().replace(/^["']|["']$/g, '')
+    if (!trimmed) return []
+
+    // 0. Discord Token Detection (standard 3-part base64 token or mfa token)
+    if (/^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{20,}$/.test(trimmed) || (trimmed.startsWith('mfa.') && trimmed.length > 40)) {
+      return [{ name: '__discord_token__', value: trimmed, path: '/' }]
+    }
+
+    // 1. Try JSON Array (e.g. Cookie-Editor / EditThisCookie export)
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => ({
+            name: item.name || item.key || '',
+            value: item.value || '',
+            domain: item.domain || '',
+            path: item.path || '/',
+          })).filter(c => c.name && c.value)
+        }
+      } catch {}
+    }
+
+    // 2. Try JSON Object (e.g. { "cookie_name": "cookie_value" } or { "token": "..." })
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        return Object.entries(parsed).map(([name, value]) => ({
+          name,
+          value: String(value),
+          path: '/',
+        })).filter(c => c.name && c.value)
+      } catch {}
+    }
+
+    // 3. Header / Semi-colon separated format (e.g. "name=value; name2=val2")
+    const result: Array<{ name: string; value: string; domain?: string; path?: string }> = []
+    const pairs = trimmed.split(';')
+    for (const pair of pairs) {
+      const idx = pair.indexOf('=')
+      if (idx > 0) {
+        const name = pair.substring(0, idx).trim()
+        const value = pair.substring(idx + 1).trim()
+        if (name && value) {
+          result.push({ name, value, path: '/' })
+        }
+      }
+    }
+    return result
+  }
+
+  function handleImportCookies() {
+    cookieStatusMsg = ''
+    cookieStatusType = ''
+
+    const parsed = parseCookies(cookieInput)
+    if (parsed.length === 0) {
+      cookieStatusMsg = 'Could not parse any cookies or token. Please check your format.'
+      cookieStatusType = 'error'
+      return
+    }
+
+    try {
+      const isToken = parsed.length === 1 && parsed[0].name === '__discord_token__'
+      if (iframeEl && iframeEl.contentWindow) {
+        iframeEl.contentWindow.postMessage(
+          {
+            type: isToken ? 'wos_import_token' : 'wos_import_cookies',
+            token: isToken ? parsed[0].value : undefined,
+            cookies: parsed,
+            raw: cookieInput,
+            reload: true,
+          },
+          '*'
+        )
+      }
+      cookieStatusMsg = isToken 
+        ? 'Discord Token detected! Logging into account...' 
+        : `Successfully injected ${parsed.length} cookie(s)! Reloading...`
+      cookieStatusType = 'success'
+      setTimeout(() => {
+        showCookieModal = false
+        cookieInput = ''
+        cookieStatusMsg = ''
+        if (isToken) {
+          if (iframeEl) {
+            iframeEl.src = `${PROXY_HOST}/scramjet/${encodeURIComponent('https://discord.com/app')}`
+          }
+        } else {
+          try {
+            if (iframeEl && iframeEl.contentWindow) {
+              iframeEl.contentWindow.location.reload()
+            } else {
+              refresh()
+            }
+          } catch (e) {
+            if (iframeEl && iframeEl.src && !iframeEl.src.endsWith('/')) {
+              iframeEl.src = iframeEl.src
+            } else {
+              refresh()
+            }
+          }
+        }
+      }, 750)
+    } catch (err: any) {
+      cookieStatusMsg = `Import error: ${err?.message || 'Failed to inject'}`
+      cookieStatusType = 'error'
+    }
+  }
 
   function handleTransportChange() {
     if (typeof localStorage !== 'undefined') {
@@ -267,6 +386,17 @@
         <span>Cloak</span>
       </button>
 
+      <!-- Cookie Importer Button -->
+      <button
+        class="cloak-btn"
+        class:active={showCookieModal}
+        on:click={() => (showCookieModal = !showCookieModal)}
+        title="Import Site Cookies"
+      >
+        <Cookie size={13} />
+        <span>Cookies</span>
+      </button>
+
       <div class="transport-control" title="Proxy Backend Transport">
         <ShieldCheck size={13} />
         <select
@@ -360,6 +490,63 @@
             <div class="switch" class:on={antiClose}>
               <div class="switch-handle"></div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Cookie Importer Modal -->
+  {#if showCookieModal}
+    <div class="cloak-overlay" on:click={() => (showCookieModal = false)}>
+      <div class="cookie-menu" on:click|stopPropagation>
+        <div class="menu-header">
+          <div class="menu-title-group">
+            <Cookie size={16} class="header-icon" />
+            <span class="menu-title">Cookie Importer</span>
+          </div>
+          <button class="close-btn" on:click={() => (showCookieModal = false)}>
+            <X size={14} />
+          </button>
+        </div>
+
+        <div class="menu-section">
+          <p class="cookie-desc">
+            Paste cookies exported from <strong>Cookie-Editor</strong>, <strong>EditThisCookie</strong>, or a standard <code>name=value;</code> header string.
+          </p>
+
+          <textarea
+            class="cookie-textarea"
+            bind:value={cookieInput}
+            placeholder={`Paste JSON array, object, or header format here:\n\n[\n  { "name": "token", "value": "..." }\n]\n\nOR\n\nname=value; session=xyz;`}
+            rows="7"
+          ></textarea>
+
+          {#if cookieStatusMsg}
+            <div class="cookie-status {cookieStatusType}">
+              {#if cookieStatusType === 'success'}
+                <Check size={13} />
+              {/if}
+              <span>{cookieStatusMsg}</span>
+            </div>
+          {/if}
+
+          <div class="cookie-actions">
+            <button
+              class="cookie-btn primary"
+              on:click={handleImportCookies}
+              disabled={!cookieInput.trim()}
+            >
+              <Cookie size={13} />
+              <span>Import & Reload</span>
+            </button>
+            <button
+              class="cookie-btn secondary"
+              on:click={() => { cookieInput = ''; cookieStatusMsg = ''; }}
+              disabled={!cookieInput.trim()}
+            >
+              <span>Clear</span>
+            </button>
           </div>
         </div>
       </div>
@@ -827,6 +1014,118 @@
   }
   .switch.on .switch-handle {
     transform: translateX(12px);
+  }
+
+  .cookie-menu {
+    width: 360px;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: menuIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .cookie-desc {
+    font-size: 11px;
+    color: #a1a1aa;
+    line-height: 1.4;
+    margin: 0 0 8px 0;
+  }
+  .cookie-desc strong {
+    color: #e4e4e7;
+  }
+  .cookie-desc code {
+    background: #27272a;
+    padding: 2px 4px;
+    border-radius: 4px;
+    color: #a78bfa;
+    font-size: 10px;
+  }
+
+  .cookie-textarea {
+    width: 100%;
+    background: #121215;
+    border: 1px solid #27272a;
+    border-radius: 6px;
+    color: #f4f4f5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    padding: 8px;
+    resize: vertical;
+    box-sizing: border-box;
+    line-height: 1.4;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .cookie-textarea:focus {
+    border-color: #8b5cf6;
+  }
+  .cookie-textarea::placeholder {
+    color: #52525b;
+  }
+
+  .cookie-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+  }
+  .cookie-status.success {
+    background: rgba(74, 222, 128, 0.1);
+    color: #4ade80;
+    border: 1px solid rgba(74, 222, 128, 0.2);
+  }
+  .cookie-status.error {
+    background: rgba(248, 113, 113, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.2);
+  }
+
+  .cookie-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .cookie-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 7px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: none;
+  }
+  .cookie-btn.primary {
+    background: #8b5cf6;
+    color: #ffffff;
+    flex: 1;
+  }
+  .cookie-btn.primary:hover:not(:disabled) {
+    background: #7c3aed;
+  }
+  .cookie-btn.secondary {
+    background: #27272a;
+    color: #d4d4d8;
+    border: 1px solid #3f3f46;
+  }
+  .cookie-btn.secondary:hover:not(:disabled) {
+    background: #3f3f46;
+  }
+  .cookie-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .browser-body {
