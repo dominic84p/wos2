@@ -1,9 +1,36 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte'
   import { settings } from '../../stores/settings'
   import type { AppId } from '../../types'
 
   export let appId: AppId
   export let size: number = 48
+
+  function getBrowserIcon(): string {
+    if (typeof localStorage !== 'undefined') {
+      const mode = localStorage.getItem('wos_browser_impersonation')
+      if (mode === 'chrome') return '/icons/chrome.svg'
+      if (mode === 'safari') return '/icons/safari.svg'
+      if (mode === 'firefox') return '/icons/firefox.svg'
+    }
+    return '/icons/edge.png'
+  }
+
+  let browserIcon = getBrowserIcon()
+
+  function refreshBrowserIcon() {
+    browserIcon = getBrowserIcon()
+  }
+
+  onMount(() => {
+    window.addEventListener('wos_browser_theme_change', refreshBrowserIcon)
+    window.addEventListener('storage', refreshBrowserIcon)
+  })
+
+  onDestroy(() => {
+    window.removeEventListener('wos_browser_theme_change', refreshBrowserIcon)
+    window.removeEventListener('storage', refreshBrowserIcon)
+  })
 
   const ICONS: Partial<Record<AppId, string>> = {
     browser:     '/icons/edge.png',
@@ -62,10 +89,11 @@
     'discover', 'paint', 'files', 'music',
   ])
 
-  $: emoji    = $settings.themeId === 'aislop' ? EMOJI_ICONS[appId] : undefined
-  $: src      = ($settings.themeId === 'linux' ? GNOME_ICONS[appId] : undefined) ?? ICONS[appId]
-  $: symbolic = $settings.themeId === 'linux' && GNOME_SYMBOLIC.has(appId)
-  $: rounded  = appId === 'dogegagechat'
+  $: emoji      = $settings.themeId === 'aislop' ? EMOJI_ICONS[appId] : undefined
+  $: browserSrc = appId === 'browser' ? browserIcon : undefined
+  $: src        = browserSrc ?? (($settings.themeId === 'linux' ? GNOME_ICONS[appId] : undefined) ?? ICONS[appId])
+  $: symbolic   = $settings.themeId === 'linux' && GNOME_SYMBOLIC.has(appId)
+  $: rounded    = appId === 'dogegagechat'
 </script>
 
 {#if emoji}

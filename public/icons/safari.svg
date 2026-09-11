@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <circle cx="24" cy="24" r="20" fill="#007aff"/>
+  <circle cx="24" cy="24" r="18" fill="#1e88e5"/>
+  <circle cx="24" cy="24" r="15" fill="#ffffff" fill-opacity="0.1"/>
+  <!-- Compass ticks -->
+  <line x1="24" y1="6" x2="24" y2="8" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="24" y1="40" x2="24" y2="42" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="6" y1="24" x2="8" y2="24" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="40" y1="24" x2="42" y2="24" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Diagonal ticks -->
+  <line x1="11.3" y1="11.3" x2="12.7" y2="12.7" stroke="#ffffff" stroke-width="1" stroke-linecap="round"/>
+  <line x1="36.7" y1="36.7" x2="35.3" y2="35.3" stroke="#ffffff" stroke-width="1" stroke-linecap="round"/>
+  <line x1="11.3" y1="36.7" x2="12.7" y2="35.3" stroke="#ffffff" stroke-width="1" stroke-linecap="round"/>
+  <line x1="36.7" y1="11.3" x2="35.3" y2="12.7" stroke="#ffffff" stroke-width="1" stroke-linecap="round"/>
+  <!-- Needle -->
+  <polygon points="24,24 28,21 37,11 27,20" fill="#ff3b30"/>
+  <polygon points="24,24 20,27 11,37 21,28" fill="#ffffff"/>
+  <circle cx="24" cy="24" r="2" fill="#ffffff"/>
+  <circle cx="24" cy="24" r="1" fill="#ff3b30"/>
+</svg>

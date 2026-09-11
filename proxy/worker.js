@@ -225,9 +225,13 @@ try{
       }
     });
   }
-}catch(e){}
 function _wn(u){try{if(_rp)_rp.postMessage({__wos:'nav',url:u},'*');}catch(e){}}
+function _wt(){try{if(_rp&&document.title)_rp.postMessage({__wos:'title',title:document.title,url:_rawHref()},'*');}catch(e){}}
 _wn(T);
+_wt();
+window.addEventListener('DOMContentLoaded',_wt);
+window.addEventListener('load',_wt);
+try{new MutationObserver(function(){_wt();}).observe(document.querySelector('head')||document.documentElement,{subtree:true,childList:true,characterData:true});}catch(e){}
 function px(u,b){
   if(!u||typeof u!=='string')return u;
   if(/^(#|data:|javascript:|blob:|mailto:|about:)/.test(u))return u;

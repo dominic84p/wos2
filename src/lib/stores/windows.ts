@@ -64,6 +64,10 @@ function createWindowStore() {
     resize(id: string, width: number, height: number) {
       update(wins => wins.map(w => (w.id === id ? { ...w, width, height } : w)))
     },
+
+    setTitle(id: string, title: string) {
+      update(wins => wins.map(w => (w.id === id ? { ...w, title } : w)))
+    },
   }
 }
 

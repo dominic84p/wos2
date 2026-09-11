@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte'
   import { settings } from '../../stores/settings'
   import { windows } from '../../stores/windows'
   import Window from '../windows/Window.svelte'
@@ -23,7 +24,33 @@
   import DogegageChatApp from '../apps/DogegageChatApp.svelte'
   import type { AppId, AppMeta } from '../../types'
 
-  const apps: AppMeta[] = [
+  function getBrowserLabel(): string {
+    if (typeof localStorage !== 'undefined') {
+      const mode = localStorage.getItem('wos_browser_impersonation')
+      if (mode === 'chrome') return 'Google Chrome'
+      if (mode === 'safari') return 'Safari'
+      if (mode === 'firefox') return 'Mozilla Firefox'
+    }
+    return 'Browser'
+  }
+
+  let browserLabel = getBrowserLabel()
+
+  function refreshBrowserLabel() {
+    browserLabel = getBrowserLabel()
+  }
+
+  onMount(() => {
+    window.addEventListener('wos_browser_theme_change', refreshBrowserLabel)
+    window.addEventListener('storage', refreshBrowserLabel)
+  })
+
+  onDestroy(() => {
+    window.removeEventListener('wos_browser_theme_change', refreshBrowserLabel)
+    window.removeEventListener('storage', refreshBrowserLabel)
+  })
+
+  const baseApps: AppMeta[] = [
     { id: 'browser',      label: 'Browser'       },
     { id: 'dogegagechat', label: 'DogeGage Chat' },
     { id: 'gamesfolder',  label: 'Homework'      },
@@ -36,7 +63,15 @@
     { id: 'settings',     label: 'Settings'      },
   ]
 
+  $: apps = baseApps.map(a => a.id === 'browser' ? { ...a, label: browserLabel } : a)
+
   function launch(app: AppMeta) {
+    if (app.id === 'browser') {
+      const existing = $windows.find(w => w.appId === 'browser')
+      if (existing) { windows.focus(existing.id); return }
+      windows.open('browser', browserLabel, { width: 1100, height: 700 })
+      return
+    }
     if (app.id === 'gamesfolder') {
       const existing = $windows.find(w => w.appId === 'files' && w.initialPath === 'games')
       if (existing) { windows.focus(existing.id); return }
@@ -95,7 +130,7 @@
       JSON.parse(localStorage.getItem('wos-icon-pos') ?? 'null') ?? {}
     const maxH = window.innerHeight - 48 - PAD * 2
     let col = 0, row = 0
-    for (const app of apps) {
+    for (const app of baseApps) {
       if (!saved[app.id]) {
         saved[app.id] = { x: PAD + col * ICON_W, y: PAD + row * ICON_H }
         row++
