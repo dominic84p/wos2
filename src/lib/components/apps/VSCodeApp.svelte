@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
   import { get } from 'svelte/store'
-  import { FilePlus, FolderPlus, Trash2, Edit3, X, File, Folder, FolderOpen, ChevronRight, ChevronDown } from 'lucide-svelte'
+  import { FilePlus, FolderPlus, Trash2, Edit3, X, File, Folder, FolderOpen, ChevronRight, ChevronDown, HardDrive } from 'lucide-svelte'
   import { vfs, extToLang } from '../../stores/filesystem'
+  import { localfs } from '../../stores/localfs'
   import { ripple } from '../../actions/ripple'
   import { windows } from '../../stores/windows'
 
@@ -32,15 +33,17 @@
   // ── Open folder state ─────────────────────────────────────
   let rootDir: string | null = null
   let pickerOpen = false
+  let mountedTreeCache: Record<string, FlatNode[]> = {}
 
   // Only expose user-facing folders; system dirs (/boot, /etc, /usr, etc.) stay hidden
-  const VS_USER_ROOTS = new Set(['/Desktop', '/Code', '/Documents', '/Games'])
+  const VS_USER_ROOTS = new Set(['/Desktop', '/Code', '/Documents', '/Games', '/Mounted'])
 
   $: vfsDirs = (() => {
     void $vfs
-    return [...$vfs.dirs]
+    const dirs = [...$vfs.dirs]
       .filter(d => d === '/' || [...VS_USER_ROOTS].some(r => d === r || d.startsWith(r + '/')))
-      .sort()
+      .filter(d => d !== '/Mounted')
+    return Array.from(new Set(dirs)).sort()
   })()
 
   // ── Status bar ────────────────────────────────────────────
@@ -99,12 +102,12 @@
     if (winState?.filePath) {
       const fp = winState.filePath
       const snap = get(vfs)
-      if (snap.dirs.includes(fp)) {
-        // It's a directory — open it as the workspace root
+      if (fp.startsWith('/Mounted/') || fp.startsWith('local:')) {
+        openFile(fp)
+      } else if (snap.dirs.includes(fp)) {
         rootDir = fp
         expandedDirs = new Set([fp])
       } else if (vfs.exists(fp)) {
-        // It's a file — open it and set rootDir to its parent
         const slash = fp.lastIndexOf('/')
         rootDir = slash > 0 ? fp.slice(0, slash) : '/'
         expandedDirs = new Set([rootDir])
@@ -124,32 +127,103 @@
     path: string; name: string; type: 'file' | 'dir'; depth: number
   }
 
+  async function loadMountedSubdir(dirPath: string) {
+    if (!$localfs.isMounted) return
+    const sub = dirPath.replace(/^\/Mounted/, '') || '/'
+    const entries = await localfs.listDir(sub)
+    mountedTreeCache[dirPath] = entries.map(e => ({
+      path: '/Mounted' + (e.path.startsWith('/') ? e.path : '/' + e.path),
+      name: e.name,
+      type: e.kind === 'directory' ? 'dir' : 'file',
+      depth: 0
+    }))
+    mountedTreeCache = { ...mountedTreeCache }
+  }
+
+  async function toggleDir(path: string) {
+    if (expandedDirs.has(path)) {
+      expandedDirs.delete(path)
+    } else {
+      expandedDirs.add(path)
+      if (path === '/Mounted' || path.startsWith('/Mounted/')) {
+        await loadMountedSubdir(path)
+      }
+    }
+    expandedDirs = new Set(expandedDirs)
+  }
+
   function buildTree(dir = rootDir ?? '/', depth = 0): FlatNode[] {
     const out: FlatNode[] = []
+
+    if (dir === '/Mounted' || dir.startsWith('/Mounted/')) {
+      const children = mountedTreeCache[dir] ?? []
+      for (const c of children) {
+        out.push({ ...c, depth })
+        if (c.type === 'dir' && expandedDirs.has(c.path)) {
+          out.push(...buildTree(c.path, depth + 1))
+        }
+      }
+      return out
+    }
+
     let entries = vfs.listDir(dir)
-    // At the VFS root, hide system dirs — only show user folders and root-level files
-    if (dir === '/') entries = entries.filter(e => e.type === 'file' || VS_USER_ROOTS.has(e.path))
+    if (dir === '/') {
+      entries = entries.filter(e => e.type === 'file' || (VS_USER_ROOTS.has(e.path) && e.path !== '/Mounted'))
+    }
     for (const e of entries) {
       out.push({ ...e, depth })
-      if (e.type === 'dir' && expandedDirs.has(e.path))
+      if (e.type === 'dir' && expandedDirs.has(e.path)) {
         out.push(...buildTree(e.path, depth + 1))
+      }
     }
-    return out
+
+    if (dir === '/' && $localfs.isMounted && rootDir !== '/Mounted') {
+      out.push({
+        path: '/Mounted',
+        name: `Mounted (${$localfs.dirName})`,
+        type: 'dir',
+        depth: 0
+      })
+      if (expandedDirs.has('/Mounted')) {
+        out.push(...buildTree('/Mounted', 1))
+      }
+    }
+
+    const seen = new Set<string>()
+    return out.filter(n => {
+      if (seen.has(n.path)) return false
+      seen.add(n.path)
+      return true
+    })
   }
 
-  // Reactive tree — rebuilds whenever vfs, rootDir, or expand state changes
-  $: flatTree = (() => { void $vfs; void rootDir; return buildTree() })()
+  // Reactive tree — rebuilds whenever vfs, localfs, rootDir, or expand state changes
+  $: flatTree = (() => { void $vfs; void $localfs; void rootDir; void mountedTreeCache; return buildTree() })()
+
+
 
   // ── File actions ──────────────────────────────────────────
-  function openFile(path: string) {
+  async function openFile(path: string) {
+    const isMedia = path.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg|flac|aac|m4a|avi|wmv)$/i)
+    if (isMedia) {
+      const fileName = path.split('/').pop() ?? 'Media'
+      windows.open('mediaplayer', fileName, { filePath: path, width: 850, height: 550 })
+      return
+    }
     if (!tabs.find(t => t.path === path)) tabs = [...tabs, { path, dirty: false }]
     activeTab = path
-    loadIntoEditor(path)
+    await loadIntoEditor(path)
   }
 
-  function loadIntoEditor(path: string) {
+  async function loadIntoEditor(path: string) {
     if (!editor || !monaco) return
-    const content = vfs.readFile(path)
+    let content = ''
+    if (path.startsWith('/Mounted/') || path.startsWith('local:')) {
+      const cleanPath = path.replace(/^\/Mounted/, '').replace(/^local:/, '')
+      content = await localfs.readFile(cleanPath)
+    } else {
+      content = vfs.readFile(path)
+    }
     const lang = extToLang(path)
     const model = monaco.editor.createModel(content, lang)
     const old = editor.getModel()
@@ -158,11 +232,18 @@
     langLabel = lang.charAt(0).toUpperCase() + lang.slice(1)
   }
 
-  function saveActive() {
+  async function saveActive() {
     if (!editor || !activeTab) return
-    vfs.writeFile(activeTab, editor.getValue())
+    const val = editor.getValue()
+    if (activeTab.startsWith('/Mounted/') || activeTab.startsWith('local:')) {
+      const cleanPath = activeTab.replace(/^\/Mounted/, '').replace(/^local:/, '')
+      await localfs.writeFile(cleanPath, val)
+    } else {
+      vfs.writeFile(activeTab, val)
+    }
     tabs = tabs.map(t => t.path === activeTab ? { ...t, dirty: false } : t)
   }
+
 
   function closeTab(path: string) {
     const idx = tabs.findIndex(t => t.path === path)
@@ -238,6 +319,12 @@
         <button title="Open Folder" use:ripple on:click={() => pickerOpen = true}><FolderOpen size={13}/></button>
       </div>
     </div>
+    {#if $localfs.needsPermission}
+      <button class="open-folder-btn" style="margin: 8px;" on:click={() => localfs.requestSavedPermission()}>
+        Unlock Mounted Host Folder
+      </button>
+    {/if}
+
 
     <div class="tree">
       <!-- New item at root of open folder -->
@@ -258,7 +345,8 @@
           class="tree-row"
           class:active-file={node.path === activeTab}
           style="padding-left:{12 + node.depth * 14}px"
-          on:click={() => node.type==='file' ? openFile(node.path) : (expandedDirs.has(node.path) ? expandedDirs.delete(node.path) : expandedDirs.add(node.path), expandedDirs=new Set(expandedDirs))}
+          on:click={() => node.type==='file' ? openFile(node.path) : toggleDir(node.path)}
+
           on:mouseover={() => hoveredPath = node.path}
           on:mouseleave={() => hoveredPath = ''}
         >
@@ -321,16 +409,59 @@
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <div class="picker-dialog" on:click|stopPropagation>
         <div class="picker-title">Open Folder</div>
-        {#each vfsDirs as dir (dir)}
+        {#if $localfs.isMounted}
           <button class="picker-item" use:ripple
-            on:click={() => { rootDir = dir; pickerOpen = false; expandedDirs = new Set([dir]); tabs = []; activeTab = ''; editor?.setModel(null); langLabel = 'Plain Text' }}>
-            <Folder size={14} color="#dcb67a" />
-            <span>{dir === '/' ? '/ (Root)' : dir}</span>
+            on:click={() => { rootDir = '/Mounted'; pickerOpen = false; expandedDirs = new Set(['/Mounted']); loadMountedSubdir('/Mounted'); tabs = []; activeTab = ''; editor?.setModel(null); langLabel = 'Plain Text' }}>
+            <HardDrive size={14} color="#3584e4" />
+            <span>Mounted Host ({$localfs.dirName})</span>
           </button>
+        {:else}
+          <button class="picker-item" use:ripple
+            on:click={async () => {
+              const ok = await localfs.mount()
+              if (ok) {
+                rootDir = '/Mounted'
+                pickerOpen = false
+                expandedDirs = new Set(['/Mounted'])
+                loadMountedSubdir('/Mounted')
+                tabs = []
+                activeTab = ''
+                editor?.setModel(null)
+              }
+            }}>
+            <HardDrive size={14} color="rgba(255,255,255,0.4)" />
+            <span>Mount Host Folder...</span>
+          </button>
+          <button class="picker-item" use:ripple
+            on:click={async () => {
+              const ok = await localfs.mountAsRoot()
+              if (ok) {
+                rootDir = '/'
+                pickerOpen = false
+                expandedDirs = new Set(['/'])
+                tabs = []
+                activeTab = ''
+                editor?.setModel(null)
+              }
+            }}>
+            <HardDrive size={14} color="#f7630c" />
+            <span>Mount Host Folder as Root (/)</span>
+          </button>
+        {/if}
+
+        {#each vfsDirs as dir (dir)}
+          {#if dir !== '/Mounted'}
+            <button class="picker-item" use:ripple
+              on:click={() => { rootDir = dir; pickerOpen = false; expandedDirs = new Set([dir]); tabs = []; activeTab = ''; editor?.setModel(null); langLabel = 'Plain Text' }}>
+              <Folder size={14} color="#dcb67a" />
+              <span>{dir === '/' ? '/ (Root)' : dir}</span>
+            </button>
+          {/if}
         {/each}
       </div>
     </div>
   {/if}
+
 
   <!-- Editor -->
   <div class="editor-area">

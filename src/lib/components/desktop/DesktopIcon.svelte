@@ -1,9 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte'
   import AppIcon from '../ui/AppIcon.svelte'
+  import { Folder, File, Film, Music } from 'lucide-svelte'
   import type { AppMeta } from '../../types'
 
-  export let app: AppMeta
+  export let app: AppMeta & { isCustomFile?: boolean; isFolder?: boolean; filePath?: string }
   export let x = 0
   export let y = 0
   export let selected = false
@@ -67,6 +68,12 @@
     }
   }
 
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    dispatch('contextmenu', { x: e.clientX, y: e.clientY })
+  }
+
   onMount(() => window.addEventListener('click', globalClick))
   onDestroy(() => window.removeEventListener('click', globalClick))
 </script>
@@ -81,9 +88,22 @@
   data-appid={app.id}
   style="left:{x}px;top:{y}px"
   on:mousedown={onMousedown}
+  on:contextmenu={onContextMenu}
   tabindex="0"
 >
-  <AppIcon appId={app.id} size={44} />
+  {#if app.isCustomFile}
+    {#if app.isFolder}
+      <Folder size={40} color="#dcb67a" />
+    {:else if app.label.match(/\.(mp4|webm|mov|m4v|mkv)$/i)}
+      <Film size={40} color="#0078d4" />
+    {:else if app.label.match(/\.(mp3|wav|ogg|flac|aac)$/i)}
+      <Music size={40} color="#0078d4" />
+    {:else}
+      <File size={40} color="#3584e4" />
+    {/if}
+  {:else}
+    <AppIcon appId={app.id} size={44} />
+  {/if}
   <div class="appName">{app.label}</div>
 </div>
 

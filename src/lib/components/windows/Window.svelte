@@ -49,13 +49,23 @@
 
   function onMouseup() { dragging = false; resizing = false }
 
+  function checkIframeFocus() {
+    if (document.activeElement && el?.contains(document.activeElement)) {
+      if (!win.focused) windows.focus(win.id)
+    }
+  }
+
   onMount(() => {
     window.addEventListener('mousemove', onMousemove)
     window.addEventListener('mouseup', onMouseup)
+    window.addEventListener('blur', checkIframeFocus, true)
+    window.addEventListener('focusin', checkIframeFocus, true)
   })
   onDestroy(() => {
     window.removeEventListener('mousemove', onMousemove)
     window.removeEventListener('mouseup', onMouseup)
+    window.removeEventListener('blur', checkIframeFocus, true)
+    window.removeEventListener('focusin', checkIframeFocus, true)
   })
 
   $: theme = $settings.themeId
@@ -143,8 +153,8 @@
 
   <div class="windowScreen">
     <slot />
-    {#if dragging || resizing || !win.focused}
-      <div class="iframe-shield" on:mousedown={() => windows.focus(win.id)}></div>
+    {#if dragging || resizing}
+      <div class="iframe-shield"></div>
     {/if}
   </div>
 

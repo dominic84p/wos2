@@ -1,44 +1,48 @@
 <script lang="ts">
   import { get } from 'svelte/store'
   import { windows } from '../../stores/windows'
-  import { vfs } from '../../stores/filesystem'
+  import { vfs, customNames } from '../../stores/filesystem'
+  import { localfs } from '../../stores/localfs'
   import { brickSystem } from '../../stores/system'
   import { ripple } from '../../actions/ripple'
   import AppIcon from '../ui/AppIcon.svelte'
   import {
     Folder, File, Gamepad2, Monitor, ArrowLeft, ArrowRight, ArrowUp,
-    Search, FolderPlus, FilePlus, Trash2, ChevronRight, Code2
+    Search, FolderPlus, FilePlus, Trash2, ChevronRight, Code2, Edit3,
+    HardDrive, Download
   } from 'lucide-svelte'
   import type { AppId } from '../../types'
 
   export let windowId: string = ''
 
   // ── Location model ──────────────────────────────────────
-  type LocType = 'root' | 'desktop' | 'vfs' | 'games' | 'code'
+  type LocType = 'root' | 'desktop' | 'vfs' | 'games' | 'code' | 'mounted'
   interface Loc { type: LocType; path?: string; label: string }
 
   interface GridItem {
     id: string
     name: string
     isFolder: boolean
-    iconType: 'folder-gold' | 'folder-blue' | 'folder-green' | 'file' | 'gamepad' | 'app' | 'eagler'
+    iconType: 'folder-gold' | 'folder-blue' | 'folder-green' | 'file' | 'gamepad' | 'app' | 'eagler' | 'harddrive'
     iconAppId?: AppId
     navLoc?: Loc
     vfsPath?: string
+    localPath?: string
     deletePath?: string   // VFS path to rmdir when this virtual item is deleted
     gameFilename?: string
     appId?: AppId
   }
+
 
   // ── Init from window state ──────────────────────────────
   function initLoc(): Loc {
     const win = get(windows).find(w => w.id === windowId)
     const p = win?.initialPath
     if (!p || p === '/') return { type: 'root', label: 'This PC' }
-    if (p === 'games')   return { type: 'games', label: 'Homework' }
-    if (p === 'desktop') return { type: 'desktop', label: 'Desktop' }
-    if (p === '/Code' || p === 'code') return { type: 'code', label: 'Code' }
-    return { type: 'vfs', path: p, label: p.split('/').filter(Boolean).pop() ?? 'Files' }
+    if (p === 'games')   return { type: 'games', label: customNames.getName('games', 'Homework') }
+    if (p === 'desktop') return { type: 'desktop', label: customNames.getName('desktop', 'Desktop') }
+    if (p === '/Code' || p === 'code') return { type: 'code', label: customNames.getName('code', 'Code') }
+    return { type: 'vfs', path: p, label: customNames.getName(p, p.split('/').filter(Boolean).pop() ?? 'Files') }
   }
 
   let hist: Loc[] = [initLoc()]
@@ -61,13 +65,22 @@
     if (loc.type === 'vfs' && loc.path && loc.path !== '/') {
       const parent = loc.path.split('/').slice(0, -1).join('/') || '/'
       go(parent === '/' ? { type: 'root', label: 'This PC' }
-                        : { type: 'vfs', path: parent, label: parent.split('/').pop() ?? 'Files' })
+                        : { type: 'vfs', path: parent, label: customNames.getName(parent, parent.split('/').pop() ?? 'Files') })
     } else if (loc.type !== 'root') {
       go({ type: 'root', label: 'This PC' })
     }
   }
 
   // ── Games data ──────────────────────────────────────────
+  import { onMount } from 'svelte'
+
+  const FALLBACK_GAMES = [
+    '3Dflightsimulator.html', 'ass_geometrydash.html', 'backrooms.html', 'blackjack.html',
+    'flappybird.html', 'fnaf.html', 'fnaf2.html', 'fnaf3.html', 'fnaf4.html',
+    'googledino.html', 'granny.html', 'granny2.html', 'minesweeper.html', 'noobminer.html',
+    'paperio2.htm', 'poker.html', 'sandgame.html'
+  ]
+
   let games: { filename: string; name: string }[] = []
   let gamesLoading = false
 
@@ -80,22 +93,49 @@
         const files: string[] = await res.json()
         games = files.filter(f => /\.html?$/i.test(f))
           .map(f => ({ filename: f, name: f.replace(/\.html?$/i, '') }))
+      } else {
+        throw new Error('manifest load error')
       }
-    } catch {}
+    } catch {
+      games = FALLBACK_GAMES.map(f => ({ filename: f, name: f.replace(/\.html?$/i, '') }))
+    }
     gamesLoading = false
   }
+
+  onMount(() => {
+    loadGames()
+  })
 
   // ── Reactive grid items ──────────────────────────────────
   let selected = ''
   let search   = ''
+  let renamingId: string | null = null
+  let renameValue = ''
 
-  $: {
-    if (loc.type === 'games') loadGames()
+  let mountedEntries: { name: string; path: string; kind: 'file' | 'directory' }[] = []
+
+  $: if (loc.type === 'games') {
+    loadGames()
   }
 
-  $: gridItems = buildGrid(loc, $vfs, games, search)
+  $: if (loc.type === 'mounted') {
+    localfs.listDir(loc.path ?? '/').then(res => {
+      mountedEntries = res
+    })
+  }
 
-  function buildGrid(l: Loc, _vfsSnap: unknown, _games: typeof games, q: string): GridItem[] {
+  $: gridItems = buildGrid(loc, $vfs, games, search, $customNames, $localfs, mountedEntries)
+
+  function buildGrid(
+    l: Loc,
+    _vfsSnap: unknown,
+    _games: typeof games,
+    q: string,
+    _customSnap: unknown,
+    _localFSState: typeof $localfs,
+    _mountedList: typeof mountedEntries
+  ): GridItem[] {
+    const getName = (id: string, fallback: string) => customNames.getName(id, fallback)
     const filt = (items: GridItem[]) =>
       q ? items.filter(i => i.name.toLowerCase().includes(q.toLowerCase())) : items
 
@@ -109,56 +149,84 @@
       const has = (p: string) => snap.dirs.includes(p)
 
       const shortcuts: GridItem[] = [
-        has('/Desktop') && { id: 'desktop', name: 'Desktop', isFolder: true, iconType: 'folder-blue' as const,
-          navLoc: { type: 'desktop' as const, label: 'Desktop' }, deletePath: '/Desktop' },
-        has('/Code') && { id: 'code', name: 'Code', isFolder: true, iconType: 'folder-gold' as const,
-          navLoc: { type: 'code' as const, label: 'Code' }, deletePath: '/Code' },
-        has('/Documents') && { id: 'documents', name: 'Documents', isFolder: true, iconType: 'folder-gold' as const,
-          navLoc: { type: 'vfs' as const, path: '/Documents', label: 'Documents' }, deletePath: '/Documents' },
-        has('/Games') && { id: 'games', name: 'Homework', isFolder: true, iconType: 'folder-green' as const,
-          navLoc: { type: 'games' as const, label: 'Homework' }, deletePath: '/Games' },
+        has('/Desktop') && { id: 'desktop', name: getName('desktop', 'Desktop'), isFolder: true, iconType: 'folder-blue' as const,
+          navLoc: { type: 'desktop' as const, label: getName('desktop', 'Desktop') }, deletePath: '/Desktop' },
+        has('/Code') && { id: 'code', name: getName('code', 'Code'), isFolder: true, iconType: 'folder-gold' as const,
+          navLoc: { type: 'code' as const, label: getName('code', 'Code') }, deletePath: '/Code' },
+        has('/Documents') && { id: 'documents', name: getName('documents', 'Documents'), isFolder: true, iconType: 'folder-gold' as const,
+          navLoc: { type: 'vfs' as const, path: '/Documents', label: getName('documents', 'Documents') }, deletePath: '/Documents' },
+        has('/Games') && { id: 'games', name: getName('games', 'Homework'), isFolder: true, iconType: 'folder-green' as const,
+          navLoc: { type: 'games' as const, label: getName('games', 'Homework') }, deletePath: '/Games' },
       ].filter(Boolean) as GridItem[]
+
+      if (_localFSState.isMounted) {
+        shortcuts.push({
+          id: 'mounted-drive',
+          name: getName('mounted-drive', `Mounted (${_localFSState.dirName})`),
+          isFolder: true,
+          iconType: 'harddrive' as const,
+          navLoc: { type: 'mounted' as const, path: '/', label: `Mounted (${_localFSState.dirName})` }
+        })
+      }
 
       const rootEntries = vfs.listDir('/').filter(e => !SYSTEM.has(e.path)).map(e =>
         e.type === 'dir'
-          ? { id: e.path, name: e.name, isFolder: true,  iconType: 'folder-gold' as const, navLoc: { type: 'vfs' as const, path: e.path, label: e.name }, deletePath: e.path }
-          : { id: e.path, name: e.name, isFolder: false, iconType: 'file' as const, vfsPath: e.path }
+          ? { id: e.path, name: getName(e.path, e.name), isFolder: true,  iconType: 'folder-gold' as const, navLoc: { type: 'vfs' as const, path: e.path, label: getName(e.path, e.name) }, deletePath: e.path }
+          : { id: e.path, name: getName(e.path, e.name), isFolder: false, iconType: 'file' as const, vfsPath: e.path }
       )
       return filt([...shortcuts, ...rootEntries])
     }
 
+    if (l.type === 'mounted') {
+      return filt(_mountedList.map(e => e.kind === 'directory'
+        ? { id: 'local:' + e.path, name: getName('local:' + e.path, e.name), isFolder: true, iconType: 'folder-gold' as const,
+            navLoc: { type: 'mounted', path: e.path, label: e.name } }
+        : { id: 'local:' + e.path, name: getName('local:' + e.path, e.name), isFolder: false, iconType: 'file' as const, localPath: e.path }
+      ))
+    }
+
     if (l.type === 'code') return filt([
-      { id: 'vscode', name: 'VS Code',   isFolder: false, iconType: 'app', iconAppId: 'vscode', appId: 'vscode' },
-      { id: 'ide',    name: 'Compiler',  isFolder: false, iconType: 'app', iconAppId: 'ide',    appId: 'ide'   },
+      { id: 'vscode', name: getName('vscode', 'VS Code'),   isFolder: false, iconType: 'app', iconAppId: 'vscode', appId: 'vscode' },
+      { id: 'ide',    name: getName('ide', 'Compiler'),  isFolder: false, iconType: 'app', iconAppId: 'ide',    appId: 'ide'   },
     ])
 
-    if (l.type === 'desktop') return filt([
-      { id: 'code-f',    name: 'Code',      isFolder: true, iconType: 'folder-gold',
-        navLoc: { type: 'code', label: 'Code' } },
-      { id: 'games-f',   name: 'Homework',     isFolder: true, iconType: 'folder-green',
-        navLoc: { type: 'games', label: 'Homework' } },
-      { id: 'browser',   name: 'Browser',   isFolder: false, iconType: 'app', iconAppId: 'browser',   appId: 'browser'   },
-      { id: 'music',     name: 'Music',     isFolder: false, iconType: 'app', iconAppId: 'music',     appId: 'music'     },
-      { id: 'notepad',   name: 'Notepad',   isFolder: false, iconType: 'app', iconAppId: 'notepad',   appId: 'notepad'   },
-      { id: 'paint',     name: 'Paint',     isFolder: false, iconType: 'app', iconAppId: 'paint',     appId: 'paint'     },
-      { id: 'discover',  name: 'App Store', isFolder: false, iconType: 'app', iconAppId: 'discover',  appId: 'discover'  },
-      { id: 'settings',  name: 'Settings',  isFolder: false, iconType: 'app', iconAppId: 'settings',  appId: 'settings'  },
-      { id: 'files',     name: 'Files',     isFolder: false, iconType: 'app', iconAppId: 'files',     appId: 'files'     },
-    ])
+    if (l.type === 'desktop') {
+      const defaults: GridItem[] = [
+        { id: 'code-f',    name: getName('code-f', 'Code'),      isFolder: true, iconType: 'folder-gold',
+          navLoc: { type: 'code', label: getName('code-f', 'Code') } },
+        { id: 'games-f',   name: getName('games-f', 'Homework'),     isFolder: true, iconType: 'folder-green',
+          navLoc: { type: 'games', label: getName('games-f', 'Homework') } },
+        { id: 'browser',   name: getName('browser', 'Browser'),   isFolder: false, iconType: 'app', iconAppId: 'browser',   appId: 'browser'   },
+        { id: 'music',     name: getName('music', 'Music'),     isFolder: false, iconType: 'app', iconAppId: 'music',     appId: 'music'     },
+        { id: 'notepad',   name: getName('notepad', 'Notepad'),   isFolder: false, iconType: 'app', iconAppId: 'notepad',   appId: 'notepad'   },
+        { id: 'paint',     name: getName('paint', 'Paint'),     isFolder: false, iconType: 'app', iconAppId: 'paint',     appId: 'paint'     },
+        { id: 'discover',  name: getName('discover', 'App Store'), isFolder: false, iconType: 'app', iconAppId: 'discover',  appId: 'discover'  },
+        { id: 'settings',  name: getName('settings', 'Settings'),  isFolder: false, iconType: 'app', iconAppId: 'settings',  appId: 'settings'  },
+        { id: 'files',     name: getName('files', 'Files'),     isFolder: false, iconType: 'app', iconAppId: 'files',     appId: 'files'     },
+      ]
+
+      const extraItems: GridItem[] = vfs.listDir('/Desktop').filter(e => e.name !== 'Code' && e.name !== 'Games').map(e => e.type === 'dir'
+        ? { id: e.path, name: getName(e.path, e.name), isFolder: true, iconType: 'folder-gold' as const,
+            navLoc: { type: 'vfs', path: e.path, label: getName(e.path, e.name) } }
+        : { id: e.path, name: getName(e.path, e.name), isFolder: false, iconType: 'file' as const, vfsPath: e.path }
+      )
+
+      return filt([...defaults, ...extraItems])
+    }
 
     if (l.type === 'vfs' && l.path) {
       const entries = vfs.listDir(l.path)
       return filt(entries.map(e => e.type === 'dir'
-        ? { id: e.path, name: e.name, isFolder: true, iconType: 'folder-gold' as const,
-            navLoc: { type: 'vfs', path: e.path, label: e.name } }
-        : { id: e.path, name: e.name, isFolder: false, iconType: 'file' as const, vfsPath: e.path }
+        ? { id: e.path, name: getName(e.path, e.name), isFolder: true, iconType: 'folder-gold' as const,
+            navLoc: { type: 'vfs', path: e.path, label: getName(e.path, e.name) } }
+        : { id: e.path, name: getName(e.path, e.name), isFolder: false, iconType: 'file' as const, vfsPath: e.path }
       ))
     }
 
     if (l.type === 'games') {
-      const eager: GridItem = { id: 'eaglercraft', name: 'EaglerCraft', isFolder: false, iconType: 'eagler' }
+      const eager: GridItem = { id: 'eaglercraft', name: getName('eaglercraft', 'EaglerCraft'), isFolder: false, iconType: 'eagler' }
       const rest: GridItem[] = _games.map(g => ({
-        id: g.filename, name: g.name, isFolder: false, iconType: 'gamepad' as const,
+        id: g.filename, name: getName(g.filename, g.name), isFolder: false, iconType: 'gamepad' as const,
         gameFilename: g.filename,
       }))
       return filt([eager, ...rest])
@@ -167,9 +235,55 @@
     return []
   }
 
+
+  function startRename(item: GridItem) {
+    renamingId = item.id
+    renameValue = item.name
+    ctxMenu = null
+  }
+
+  function commitRename(item: GridItem) {
+    const val = renameValue.trim()
+    if (!val || !renamingId) { renamingId = null; return }
+
+    customNames.rename(item.id, val)
+
+    if (item.vfsPath) {
+      const parts = item.vfsPath.split('/').filter(Boolean)
+      const parent = parts.length <= 1 ? '/' : '/' + parts.slice(0, -1).join('/')
+      const newPath = (parent === '/' ? '' : parent) + '/' + val
+      vfs.rename(item.vfsPath, newPath)
+    } else if (item.deletePath) {
+      const parts = item.deletePath.split('/').filter(Boolean)
+      const parent = parts.length <= 1 ? '/' : '/' + parts.slice(0, -1).join('/')
+      const newPath = (parent === '/' ? '' : parent) + '/' + val
+      vfs.rename(item.deletePath, newPath)
+    }
+
+    renamingId = null
+    renameValue = ''
+  }
+
   // ── Actions ──────────────────────────────────────────────
-  function activate(item: GridItem) {
-    if (item.navLoc)        { go(item.navLoc); return }
+  async function activate(item: GridItem) {
+    if (item.navLoc) { go(item.navLoc); return }
+    const isMedia = item.name.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg)$/i)
+    if (isMedia) {
+      const p = item.localPath ? item.localPath : item.vfsPath
+      if (p) {
+        windows.open('mediaplayer', item.name, { filePath: p, width: 800, height: 500 })
+        return
+      }
+    }
+    if (item.localPath) {
+      const content = await localfs.readFile(item.localPath)
+      if (item.localPath.match(/\.html?$/i)) {
+        windows.open('notepad', item.name, { filePath: item.localPath })
+      } else {
+        openInVSCodeLocal(item.localPath, item.name, content)
+      }
+      return
+    }
     if (item.vfsPath) {
       if (item.vfsPath.match(/\.html?$/i)) {
         const name = item.name
@@ -179,6 +293,7 @@
       }
       return
     }
+
     if (item.id === 'eaglercraft') { launchApp('eaglercraft'); return }
     if (item.gameFilename)  { launchGame(item.gameFilename); return }
     if (item.appId)         { launchApp(item.appId); return }
@@ -186,6 +301,21 @@
 
   function openInVSCode(path: string) {
     windows.open('vscode', 'VS Code', { maximized: true, filePath: path })
+  }
+
+  function openInVSCodeLocal(path: string, name: string, content: string) {
+    windows.open('vscode', name, { maximized: true, filePath: path })
+  }
+
+  function downloadVFSToPC(path: string, filename: string) {
+    const content = vfs.readFile(path)
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // Returns the VFS path for any item — file path or folder path
@@ -209,7 +339,7 @@
   }
 
   function onBgCtxMenu(e: MouseEvent) {
-    if (loc.type !== 'vfs') return
+    if (loc.type !== 'vfs' && loc.type !== 'mounted') return
     e.preventDefault()
     ctxMenu = null
     bgCtxMenu = { x: e.clientX, y: e.clientY }
@@ -225,9 +355,12 @@
     windows.open('notepad', 'Notepad', { filePath: path })
   }
 
-  function deleteTile(item: GridItem) {
+  async function deleteTile(item: GridItem) {
     if (!confirm(`Delete "${item.name}"?`)) return
-    if (item.vfsPath) {
+    if (item.localPath) {
+      await localfs.remove(item.localPath)
+      mountedEntries = await localfs.listDir(loc.path ?? '/')
+    } else if (item.vfsPath) {
       vfs.deleteFile(item.vfsPath)
     } else {
       const dir = item.deletePath ?? (item.navLoc?.type === 'vfs' ? item.navLoc.path : null)
@@ -259,18 +392,33 @@
     windows.open('game', filename.replace(/\.html?$/i,''), { gameUrl: url, width: 1024, height: 700 })
   }
 
-  // ── VFS mutations (only in vfs mode) ─────────────────────
+  // ── VFS & Local mutations ─────────────────────
   let newMode: 'file' | 'dir' | null = null
   let newName = ''
 
-  function commitNew() {
+  async function commitNew() {
     const n = newName.trim()
-    if (!n || !newMode || loc.type !== 'vfs' || !loc.path) { newMode = null; newName = ''; return }
+    if (!n || !newMode) { newMode = null; newName = ''; return }
+
+    if (loc.type === 'mounted') {
+      const p = ((loc.path === '/' || !loc.path) ? '' : loc.path) + '/' + n
+      if (newMode === 'file') {
+        await localfs.writeFile(p, '')
+      } else {
+        await localfs.mkdir(p)
+      }
+      mountedEntries = await localfs.listDir(loc.path ?? '/')
+      newMode = null; newName = ''
+      return
+    }
+
+    if (loc.type !== 'vfs' || !loc.path) { newMode = null; newName = ''; return }
     const p = (loc.path === '/' ? '' : loc.path) + '/' + n
     if (newMode === 'file') { vfs.writeFile(p, ''); openInVSCode(p) }
     else                    { vfs.mkdir(p) }
     newMode = null; newName = ''
   }
+
 
   function deleteSelected() {
     if (!selected || loc.type !== 'vfs') return
@@ -311,9 +459,9 @@
 
   // ── Selected item type ───────────────────────────────────
   $: selectedItem = gridItems.find(i => i.id === selected)
-  $: canVSCode  = !!selectedItem && !selectedItem.isFolder && !!selectedItem.vfsPath
-  $: canDelete  = !!selectedItem && loc.type === 'vfs'
-  $: canCreate  = loc.type === 'vfs'
+  $: canVSCode  = !!selectedItem && !selectedItem.isFolder && (!!selectedItem.vfsPath || !!selectedItem.localPath)
+  $: canDelete  = !!selectedItem && (loc.type === 'vfs' || loc.type === 'mounted')
+  $: canCreate  = loc.type === 'vfs' || loc.type === 'mounted'
 
   // ── Total count ──────────────────────────────────────────
   $: totalCount = loc.type === 'games' ? (games.length + 1) : gridItems.length
@@ -347,7 +495,13 @@
 
     <div class="toolbar-actions" on:click|stopPropagation>
       {#if canVSCode}
-        <button class="act-btn" use:ripple title="Open in VS Code" on:click={() => openInVSCode(selectedItem!.vfsPath!)}>
+        <button class="act-btn" use:ripple title="Open in VS Code" on:click={() => {
+          if (selectedItem?.localPath) {
+            activate(selectedItem)
+          } else if (selectedItem?.vfsPath) {
+            openInVSCode(selectedItem.vfsPath)
+          }
+        }}>
           <Code2 size={13} />
         </button>
       {/if}
@@ -405,6 +559,24 @@
         <Monitor size={15} color="rgba(255,255,255,0.5)" />
         <span>This PC</span>
       </button>
+
+      {#if $localfs.isMounted}
+        <button class="sidebar-item" class:active={loc.type==='mounted'} use:ripple
+          on:click={() => go({ type: 'mounted', path: '/', label: `Mounted (${$localfs.dirName})` })}>
+          <HardDrive size={15} color={$localfs.isRootMounted ? '#f7630c' : '#3584e4'} />
+          <span>{$localfs.isRootMounted ? 'Root Host' : 'Mounted Host'} ({$localfs.dirName})</span>
+        </button>
+      {:else}
+        <button class="sidebar-item" use:ripple on:click={() => localfs.mount()}>
+          <HardDrive size={15} color="rgba(255,255,255,0.4)" />
+          <span>Mount Host Folder</span>
+        </button>
+        <button class="sidebar-item" use:ripple on:click={() => localfs.mountAsRoot()}>
+          <HardDrive size={15} color="#f7630c" />
+          <span>Mount Host as Root (/)</span>
+        </button>
+      {/if}
+
       <button class="sidebar-item disk-item" class:active={loc.type==='vfs' && loc.path==='/'} use:ripple
         on:click={() => go({ type: 'vfs', path: '/', label: 'Virtual Disk' })}>
         <div class="disk-icon">💾</div>
@@ -453,6 +625,8 @@
                   <Folder size={36} color="#4cc2ff" />
                 {:else if item.iconType === 'folder-green'}
                   <Folder size={36} color="#81c784" />
+                {:else if item.iconType === 'harddrive'}
+                  <HardDrive size={36} color="#3584e4" />
                 {:else if item.iconType === 'gamepad'}
                   <Gamepad2 size={36} color="#4cc2ff" />
                 {:else if item.iconType === 'eagler' || item.iconType === 'app'}
@@ -461,7 +635,19 @@
                   <File size={36} color="rgba(255,255,255,0.55)" />
                 {/if}
               </div>
-              <span class="tile-name">{item.name}</span>
+              {#if renamingId === item.id}
+                <!-- svelte-ignore a11y-autofocus -->
+                <input
+                  class="new-input"
+                  bind:value={renameValue}
+                  autofocus
+                  on:click|stopPropagation
+                  on:keydown={(e) => { if (e.key === 'Enter') commitRename(item); if (e.key === 'Escape') { renamingId = null; renameValue = '' } }}
+                  on:blur={() => commitRename(item)}
+                />
+              {:else}
+                <span class="tile-name">{item.name}</span>
+              {/if}
             </div>
           {:else}
             {#if !search}
@@ -472,7 +658,7 @@
           {/each}
 
           <!-- Inline new item input -->
-          {#if newMode && loc.type === 'vfs'}
+          {#if newMode && (loc.type === 'vfs' || loc.type === 'mounted')}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <div class="tile new-tile" on:click|stopPropagation>
               <div class="tile-icon gold">
@@ -501,6 +687,11 @@
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <div class="ctx-menu" style="left:{ctxMenu.x}px;top:{ctxMenu.y}px" on:click|stopPropagation>
         <button class="ctx-item" on:click={() => { const it = ctxMenu!.item; ctxMenu = null; activate(it) }}>Open</button>
+        {#if ctxMenu.item.vfsPath && !ctxMenu.item.isFolder}
+          <button class="ctx-item" on:click={() => { downloadVFSToPC(ctxMenu!.item.vfsPath!, ctxMenu!.item.name); ctxMenu = null }}>
+            <Download size={13} style="display:inline-block;margin-right:6px;vertical-align:-2px" /> Download to PC
+          </button>
+        {/if}
         {#if itemVFSPath(ctxMenu.item)}
           <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div class="ctx-sub">
@@ -515,11 +706,15 @@
             </div>
           </div>
         {/if}
+        <button class="ctx-item" on:click={() => { const it = ctxMenu!.item; startRename(it) }}>
+          <Edit3 size={13} style="display:inline-block;margin-right:6px;vertical-align:-2px" /> Rename
+        </button>
         <div class="ctx-sep"></div>
         <button class="ctx-item ctx-danger" on:click={() => { const it = ctxMenu!.item; ctxMenu = null; deleteTile(it) }}>Delete</button>
       </div>
     </div>
   {/if}
+
 
   <!-- Background context menu (right-click on empty space in VFS) -->
   {#if bgCtxMenu}

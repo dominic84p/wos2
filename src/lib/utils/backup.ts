@@ -173,3 +173,23 @@ export async function importBackup(backup: WOSBackup): Promise<void> {
     )
   }
 }
+
+export async function downloadOSBackup() {
+  const data = await exportBackup()
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const dateStr = new Date().toISOString().slice(0, 10)
+  a.download = `wos_backup_${dateStr}.wos`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function triggerOSRestore(file: File) {
+  const text = await file.text()
+  const data = JSON.parse(text)
+  await importBackup(data)
+  window.location.reload()
+}
+

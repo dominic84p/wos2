@@ -20,6 +20,9 @@ function loadSave(): SaveState {
     const raw = localStorage.getItem(SAVE_KEY)
     if (!raw) return { ...defaults }
     const parsed = JSON.parse(raw) as Partial<SaveState>
+    if (parsed.wallpaper?.includes('doggy.jpg')) {
+      parsed.wallpaper = '/wallpapers/win11-default.jpg'
+    }
     return { ...defaults, ...parsed, version: CURRENT_VERSION }
   } catch {
     return { ...defaults }

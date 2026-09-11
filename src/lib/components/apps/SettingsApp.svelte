@@ -1,7 +1,8 @@
 <script lang="ts">
   import { settings } from '../../stores/settings'
-  import { exportBackup, importBackup, type WOSBackup } from '../../utils/backup'
-  import { Download, Upload, RotateCcw, Palette, Shield, Database, Info, Monitor } from 'lucide-svelte'
+  import { exportBackup, importBackup, downloadOSBackup, triggerOSRestore, type WOSBackup } from '../../utils/backup'
+  import { localfs } from '../../stores/localfs'
+  import { Download, Upload, RotateCcw, Palette, Shield, Database, Info, Monitor, HardDrive, CheckCircle2 } from 'lucide-svelte'
   import type { ThemeId, TaskbarEdge } from '../../types'
 
   export const windowId: string = ''
@@ -9,15 +10,53 @@
   type Section = 'appearance' | 'desktop' | 'privacy' | 'data' | 'about'
   let activeSection: Section = 'appearance'
 
+
   // ── Wallpapers ────────────────────────────────────────────────────
+  const CUSTOM_WP_KEY = 'wos-custom-wallpapers'
+  function getCustomWallpapers(): string[] {
+    try {
+      return JSON.parse(localStorage.getItem(CUSTOM_WP_KEY) ?? '[]')
+    } catch { return [] }
+  }
+
+  let customWallpapers: string[] = getCustomWallpapers()
   let wallpapers: string[] = []
+
   async function loadWallpapers() {
     try {
       const res = await fetch('/wallpapers/manifest.json')
-      if (res.ok) wallpapers = (await res.json() as string[]).map(f => `/wallpapers/${f}`)
-    } catch { wallpapers = ['/wallpapers/cool space.jpg'] }
+      if (res.ok) {
+        const list = (await res.json() as string[]).filter(f => !f.includes('doggy.jpg'))
+        wallpapers = list.map(f => `/wallpapers/${f}`)
+      }
+    } catch { wallpapers = ['/wallpapers/win11-default.jpg'] }
   }
   loadWallpapers()
+
+  function handleWallpaperUpload(e: Event) {
+    const target = e.target as HTMLInputElement
+    const file = target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      const dataUrl = evt.target?.result as string
+      if (dataUrl) {
+        customWallpapers = [dataUrl, ...customWallpapers]
+        localStorage.setItem(CUSTOM_WP_KEY, JSON.stringify(customWallpapers))
+        settings.patch({ wallpaper: dataUrl })
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function removeCustomWallpaper(wp: string, e: MouseEvent) {
+    e.stopPropagation()
+    customWallpapers = customWallpapers.filter(w => w !== wp)
+    localStorage.setItem(CUSTOM_WP_KEY, JSON.stringify(customWallpapers))
+    if ($settings.wallpaper === wp) {
+      settings.patch({ wallpaper: wallpapers[0] ?? '/wallpapers/win11-default.jpg' })
+    }
+  }
 
   // ── Theme presets ─────────────────────────────────────────────────
   interface ThemePreset {
@@ -98,42 +137,34 @@
     { edge: 'right',  label: 'Right'  },
   ]
 
-  // ── Data ──────────────────────────────────────────────────────────
+  // ── Data & Storage ────────────────────────────────────────────────
   let exporting = false
   let importing = false
 
   async function exportSave() {
     exporting = true
     try {
-      const backup = await exportBackup()
-      const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `wos_backup_${new Date().toISOString().slice(0,10)}.json`
-      a.click()
-      URL.revokeObjectURL(a.href)
+      await downloadOSBackup()
     } finally { exporting = false }
   }
 
   function importSave() {
     const input = document.createElement('input')
-    input.type = 'file'; input.accept = '.json'
+    input.type = 'file'; input.accept = '.wos,.json'
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file) return
       importing = true
       try {
-        const text = await file.text()
-        const backup = JSON.parse(text) as WOSBackup
-        if (backup.version === 2 && backup.localStorage) {
-          await importBackup(backup); window.location.reload()
-        } else {
-          if (!settings.importSave(text)) alert('Invalid backup file')
-        }
-      } catch { alert('Invalid backup file'); importing = false }
+        await triggerOSRestore(file)
+      } catch (err: any) {
+        alert('Invalid backup file: ' + (err?.message || 'Could not parse file'))
+        importing = false
+      }
     }
     input.click()
   }
+
 
   let confirmReset = false
   function resetSave() {
@@ -238,6 +269,30 @@
       <section>
         <h2>Wallpaper</h2>
         <div class="wallpaper-grid">
+          <label class="wp-thumb wp-upload-btn" title="Upload custom wallpaper">
+            <Upload size={20} />
+            <span class="wp-upload-txt">Upload</span>
+            <input type="file" accept="image/*" on:change={handleWallpaperUpload} hidden />
+          </label>
+
+          {#each customWallpapers as wp (wp)}
+            <div
+              class="wp-thumb custom-wp"
+              class:sel={$settings.wallpaper === wp}
+              style="background-image:url({wp})"
+              role="button"
+              tabindex="0"
+              on:click={() => settings.patch({ wallpaper: wp })}
+              on:keydown={(e) => e.key === 'Enter' && settings.patch({ wallpaper: wp })}
+            >
+              <button
+                class="wp-delete-btn"
+                title="Remove wallpaper"
+                on:click={(e) => removeCustomWallpaper(wp, e)}
+              >×</button>
+            </div>
+          {/each}
+
           {#each wallpapers as wp (wp)}
             <button
               class="wp-thumb"
@@ -246,9 +301,6 @@
               on:click={() => settings.patch({ wallpaper: wp })}
             ></button>
           {/each}
-          {#if wallpapers.length === 0}
-            <p class="hint">No wallpapers — add images to <code>public/wallpapers/</code></p>
-          {/if}
         </div>
       </section>
 
@@ -302,17 +354,67 @@
     {:else if activeSection === 'data'}
 
       <section>
-        <h2>Backup</h2>
-        <p class="hint">Exports everything — settings, EaglerCraft world saves &amp; username, icon positions, cookies. Email it to yourself to restore on any machine.</p>
+        <h2>Host Storage Mounting (FileSystem Access)</h2>
+        <p class="hint">Mount a real folder from your physical computer or USB flash drive. Files inside will be read, written, and saved directly to real disk from WOS.</p>
+        
+        <div class="toggle-card">
+          <div class="toggle-info">
+            <span class="toggle-title">Mount Host Folder as WOS Root (/)</span>
+            <span class="toggle-desc">
+              When enabled, the mounted host folder becomes WOS Root (<code>/</code>). 
+              WOS manages <code>Desktop/</code>, <code>Code/</code>, <code>Documents/</code>, and <code>Games/</code> directly inside your computer's real folder.
+              Dropping files onto WOS Desktop saves them straight to your real disk!
+            </span>
+          </div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              checked={$localfs.isMounted && $localfs.isRootMounted}
+              on:change={async (e) => {
+                if (e.currentTarget.checked) {
+                  await localfs.mountAsRoot()
+                } else {
+                  localfs.unmount()
+                }
+              }}
+            />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="btn-row" style="margin-top: 14px;">
+          {#if $localfs.isMounted}
+            <div class="mounted-badge">
+              <CheckCircle2 size={15} color="#27ae60" />
+              <span>Mounted ({$localfs.isRootMounted ? 'Root /' : 'Drive'}): <strong>{$localfs.dirName}</strong></span>
+            </div>
+            <button class="action-btn danger" on:click={() => localfs.unmount()}>
+              Unmount Folder
+            </button>
+          {:else}
+            <button class="action-btn primary-btn" on:click={() => localfs.mountAsRoot()}>
+              <HardDrive size={14} color="#f7630c" /> Mount Host Folder as Root (/)
+            </button>
+            <button class="action-btn" on:click={() => localfs.mount()}>
+              <HardDrive size={14} /> Mount Host Folder as Drive
+            </button>
+          {/if}
+        </div>
+      </section>
+
+      <section>
+        <h2>Complete OS Backup (.wos)</h2>
+        <p class="hint">Exports 100% of WOS state — virtual files, settings, custom wallpapers, cookies, and app data into a single <code>.wos</code> file.</p>
         <div class="btn-row">
           <button class="action-btn" on:click={exportSave} disabled={exporting}>
-            <Download size={14} />{exporting ? 'Exporting…' : 'Export backup'}
+            <Download size={14} />{exporting ? 'Exporting…' : 'Export (.wos)'}
           </button>
           <button class="action-btn" on:click={importSave} disabled={importing}>
-            <Upload size={14} />{importing ? 'Importing…' : 'Import backup'}
+            <Upload size={14} />{importing ? 'Importing…' : 'Import (.wos)'}
           </button>
         </div>
       </section>
+
 
       <section>
         <h2>Reset</h2>
@@ -565,6 +667,59 @@
   .wp-thumb:hover { transform: scale(1.03); }
   .wp-thumb.sel { border-color: var(--accent); }
 
+  .wp-upload-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    color: var(--text-primary);
+  }
+
+  .wp-upload-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--accent);
+  }
+
+  .wp-upload-txt {
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .custom-wp {
+    position: relative;
+  }
+
+  .wp-delete-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+  }
+
+  .custom-wp:hover .wp-delete-btn {
+    opacity: 1;
+  }
+
+  .wp-delete-btn:hover {
+    background: #e74c3c;
+  }
+
   /* ── Taskbar position editor ── */
   .pos-grid {
     display: grid;
@@ -704,6 +859,89 @@
   /* ── Data ── */
   .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
+  .toggle-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    margin-top: 10px;
+    gap: 16px;
+  }
+
+  .toggle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .toggle-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .toggle-desc {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    line-height: 1.4;
+  }
+
+  .primary-btn {
+    border-color: rgba(247, 99, 12, 0.4);
+    background: rgba(247, 99, 12, 0.15);
+  }
+
+  .primary-btn:hover {
+    background: rgba(247, 99, 12, 0.25);
+  }
+
+  /* Switch */
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255, 255, 255, 0.2);
+    transition: 0.2s;
+    border-radius: 24px;
+  }
+
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.2s;
+    border-radius: 50%;
+  }
+
+  input:checked + .slider {
+    background-color: #f7630c;
+  }
+
+  input:checked + .slider:before {
+    transform: translateX(20px);
+  }
+
   .action-btn {
     display: flex; align-items: center; gap: 7px;
     padding: 9px 16px;
@@ -719,6 +957,15 @@
   .action-btn:hover { background: rgba(255,255,255,0.1); }
   .action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .action-btn.danger:hover { background: rgba(231,76,60,0.15); border-color: rgba(231,76,60,0.4); color: #e74c3c; }
+
+  .mounted-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 8px;
+    background: rgba(39, 174, 96, 0.15);
+    border: 1px solid rgba(39, 174, 96, 0.35);
+    font-size: 13px; color: #fff;
+  }
+
 
   /* ── About ── */
   .about-card {

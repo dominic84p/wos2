@@ -20,6 +20,13 @@
     windows.open('eaglercraft', 'EaglerCraft', { maximized: true })
   }
 
+  const FALLBACK_GAMES = [
+    '3Dflightsimulator.html', 'ass_geometrydash.html', 'backrooms.html', 'blackjack.html',
+    'flappybird.html', 'fnaf.html', 'fnaf2.html', 'fnaf3.html', 'fnaf4.html',
+    'googledino.html', 'granny.html', 'granny2.html', 'minesweeper.html', 'noobminer.html',
+    'paperio2.htm', 'poker.html', 'sandgame.html'
+  ]
+
   let games: GameEntry[] = []
   let loading = true
   let error = false
@@ -40,7 +47,11 @@
         }))
         .sort((a, b) => a.name.localeCompare(b.name))
     } catch {
-      error = true
+      games = FALLBACK_GAMES.map(f => ({
+        filename: f,
+        name: f.replace(/\.html?$/i, ''),
+        displayName: f.replace(/\.html?$/i, '') + '.app',
+      })).sort((a, b) => a.name.localeCompare(b.name))
     } finally {
       loading = false
     }

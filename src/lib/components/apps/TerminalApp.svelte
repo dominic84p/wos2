@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { onMount, onDestroy, tick } from 'svelte'
   import { windows } from '../../stores/windows'
   import type { AppId } from '../../types'
 
@@ -119,8 +119,27 @@
     homework:    { appId: 'gamesfolder', title: 'Homework' },
   }
 
+  // ── Animation & Stream Handlers ───────────────────────────────────
+  let activeInterval: ReturnType<typeof setInterval> | null = null
+  let activeTimeouts: ReturnType<typeof setTimeout>[] = []
+
+  function stopActiveAnimation() {
+    if (activeInterval) {
+      clearInterval(activeInterval)
+      activeInterval = null
+    }
+    for (const t of activeTimeouts) {
+      clearTimeout(t)
+    }
+    activeTimeouts = []
+  }
+
+  onDestroy(() => {
+    stopActiveAnimation()
+  })
+
   // ── Output helpers ────────────────────────────────────────────────
-  type LineType = 'cmd' | 'out' | 'err' | 'info' | 'dir'
+  type LineType = 'cmd' | 'out' | 'err' | 'info' | 'dir' | 'hack' | 'larp'
   interface Line { type: LineType; text: string }
 
   function out(texts: string[]): Line[] { return texts.map(text => ({ type: 'out' as LineType, text })) }
@@ -144,6 +163,103 @@
 
   $: promptDisplay = `user@wos:${cwd}$`
 
+  // ── Fake Hacking & LARP Stream Logic ─────────────────────────────
+  function startHackSequence(target: string) {
+    stopActiveAnimation()
+    const ip = `${Math.floor(Math.random() * 150 + 50)}.${Math.floor(Math.random() * 200 + 10)}.${Math.floor(Math.random() * 200 + 10)}.${Math.floor(Math.random() * 250 + 1)}`
+    
+    const steps = [
+      // Phase 1: Reconnaissance
+      { text: `[!] Initializing QuantumExploit Framework v4.2.0-release...`, delay: 80, type: 'info' as LineType },
+      { text: `[*] Target host acquired: '${target}' [IP: ${ip}]`, delay: 300, type: 'out' as LineType },
+      { text: `[*] Initiating SYN stealth scan on 65535 ports...`, delay: 600, type: 'out' as LineType },
+      { text: `[DEBUG] Packet sent to ${target}:80 (SYN)  -> Received (SYN/ACK)`, delay: 850, type: 'out' as LineType },
+      { text: `[DEBUG] Packet sent to ${target}:443 (SYN) -> Received (SYN/ACK)`, delay: 1000, type: 'out' as LineType },
+      { text: `[DEBUG] Packet sent to ${target}:22 (SYN)  -> Received (SYN/ACK)`, delay: 1150, type: 'out' as LineType },
+      { text: `[DEBUG] Packet sent to ${target}:8080 (SYN)-> Received (SYN/ACK)`, delay: 1300, type: 'out' as LineType },
+      { text: `[+] Port 22/tcp   OPEN   OpenSSH 8.9p1 Ubuntu`, delay: 1500, type: 'dir' as LineType },
+      { text: `[+] Port 80/tcp   OPEN   nginx/1.18.0 (reverse proxy)`, delay: 1650, type: 'dir' as LineType },
+      { text: `[+] Port 443/tcp  OPEN   nginx/1.18.0 (TLS v1.3)`, delay: 1800, type: 'dir' as LineType },
+      { text: `[+] Port 8080/tcp OPEN   Apache Tomcat 9.0.50 (VULNERABLE)`, delay: 1950, type: 'dir' as LineType },
+
+      // Phase 2: Vulnerability Analysis
+      { text: `[*] Probing Apache Tomcat on ${target}:8080 for CVE-2024-9102...`, delay: 2300, type: 'info' as LineType },
+      { text: `[!] VULNERABILITY DETECTED: Unauthenticated deserialization leak!`, delay: 2700, type: 'err' as LineType },
+      { text: `[*] Generating x86_64 ROP chain (Return-Oriented Programming)...`, delay: 3100, type: 'hack' as LineType },
+      { text: `[DEBUG] Gadget #1: 0x00000000004011d3 : pop rdi ; ret`, delay: 3350, type: 'out' as LineType },
+      { text: `[DEBUG] Gadget #2: 0x00000000004011d4 : pop rsi ; pop r15 ; ret`, delay: 3550, type: 'out' as LineType },
+      { text: `[DEBUG] Gadget #3: 0x00000000004011d7 : syscall`, delay: 3750, type: 'out' as LineType },
+      { text: `[+] Assembling payload buffer (size: 1024 bytes)...`, delay: 4000, type: 'hack' as LineType },
+
+      // Phase 3: Exploitation & Memory Override
+      { text: `[+] Transmitting exploit payload to ${target}:8080/api/v1/session...`, delay: 4400, type: 'hack' as LineType },
+      { text: `[DEBUG] Raw Payload: \\x7fELF\\x02\\x01\\x01\\x00\\x3e\\x00\\x01\\x00...`, delay: 4650, type: 'out' as LineType },
+      { text: `[*] Overwriting target instruction pointer [RIP] @ 0x7FFF88F02000...`, delay: 4950, type: 'hack' as LineType },
+      { text: `[+] ASLR bypass verified! Kernel base address at 0xffffffff81000000`, delay: 5250, type: 'hack' as LineType },
+      { text: `[+] Disabling SELinux & AppArmor enforcement policies...`, delay: 5600, type: 'hack' as LineType },
+
+      // Phase 4: Hash Cracking & Root Escalation
+      { text: `[*] Dumping /etc/shadow password hashes from memory pool...`, delay: 6000, type: 'info' as LineType },
+      { text: `[DEBUG] Hash: root:$6$qx9K$3bZ7h901x...:19120:0:99999:7::`, delay: 6250, type: 'out' as LineType },
+      { text: `[*] Brute-forcing root hash via CUDA GPU Cluster...`, delay: 6550, type: 'hack' as LineType },
+      { text: `[HASH] 12,500,000 hashes/sec [Dictionary Progress: 34%] ...`, delay: 6800, type: 'out' as LineType },
+      { text: `[HASH] 28,900,000 hashes/sec [Dictionary Progress: 89%] ...`, delay: 7050, type: 'out' as LineType },
+      { text: `[✓] PASSWORD FOUND: 'P@ssw0rd2026!'`, delay: 7350, type: 'hack' as LineType },
+      { text: `[+] Escalating privileges: uid=1000(guest) -> uid=0(root)`, delay: 7700, type: 'hack' as LineType },
+
+      // Phase 5: Shell & Clean-up
+      { text: `[✓] SUCCESS: Connected to remote root shell on '${target}'!`, delay: 8100, type: 'hack' as LineType },
+      { text: `[✓] Scrubbing /var/log/auth.log and clearing wtmp entries... DONE`, delay: 8500, type: 'cmd' as LineType },
+      { text: `[✓] Systemd backdoor persistence established at /etc/systemd/system/wosd.service`, delay: 8900, type: 'cmd' as LineType },
+      { text: `[!] Host '${target}' is now fully compromised. Root access unlocked.`, delay: 9300, type: 'info' as LineType },
+    ]
+
+    for (const step of steps) {
+      const timer = setTimeout(() => {
+        lines = [...lines, { type: step.type, text: step.text }]
+        tick().then(() => scrollEl?.scrollTo({ top: scrollEl.scrollHeight }))
+      }, step.delay)
+      activeTimeouts.push(timer)
+    }
+  }
+
+  function generateLarpLine(): string {
+    const hex = (len: number) => Array.from({ length: len }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+    const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
+    const modules = ['kernel', 'crypto', 'mmu', 'network', 'vfs', 'compiler', 'gpu', 'syscall', 'quantum']
+    const files = ['vm.cpp', 'matrix.rs', 'buffer.c', 'cipher.go', 'vector.asm', 'allocator.h']
+    
+    const templates = [
+      () => `0x7FF${hex(5).toUpperCase()}  ${hex(2)} ${hex(2)} ${hex(2)} ${hex(2)} ${hex(2)} ${hex(2)} ${hex(2)} ${hex(2)}  |${hex(4)}.${hex(4)}|`,
+      () => `[BUILD] src/${modules[randInt(0, modules.length - 1)]}/${files[randInt(0, files.length - 1)]} -> compile step ${randInt(10, 99)}% ... DONE (${randInt(2, 45)}ms)`,
+      () => `[NET] TX 192.168.${randInt(1, 254)}.${randInt(1, 254)}:443 -> 10.0.${randInt(0, 255)}.${randInt(1, 254)} [SEQ=${randInt(10000, 99999)} ACK=${randInt(100000, 999999)}]`,
+      () => `[MMU] Allocating page block frame at 0x${hex(8).toUpperCase()} ... [OK]`,
+      () => `[HASH] calc SHA-512 (${hex(16)}...) -> diff 0.000${randInt(100, 999)}`,
+      () => `>>> INJECTING SHADOW STACK OVERFLOW INTO SUBROUTINE 0x${hex(4).toUpperCase()}`,
+      () => `[SYS] syscall_${randInt(1, 300)}(0x${hex(4)}, 0x${hex(4)}) returns 0x0 [STATUS_SUCCESS]`,
+      () => `[QUANTUM] Decrypting node lattice block #${randInt(1000, 9999)} ... OK`,
+    ]
+    const idx = randInt(0, templates.length - 1)
+    return templates[idx]()
+  }
+
+  function startLarpStream() {
+    stopActiveAnimation()
+    lines = [...lines, { type: 'info', text: '>>> STARTING RAPID CODE & SYSTEM LOG STREAM (Press Ctrl+C to stop) <<<' }]
+    activeInterval = setInterval(() => {
+      const newLines: Line[] = []
+      const count = Math.floor(Math.random() * 2) + 2
+      for (let i = 0; i < count; i++) {
+        newLines.push({ type: 'larp', text: generateLarpLine() })
+      }
+      lines = [...lines, ...newLines]
+      if (lines.length > 500) {
+        lines = lines.slice(-400)
+      }
+      scrollEl?.scrollTo({ top: scrollEl.scrollHeight })
+    }, 40)
+  }
+
   // ── Commands ──────────────────────────────────────────────────────
   function run(raw: string): Line[] {
     const [cmd, ...args] = raw.trim().split(/\s+/)
@@ -165,6 +281,8 @@
           '  clear  /  Ctrl+L    clear screen',
           '  open <app>          open a WOS app',
           '  open <file.html>    preview HTML in browser',
+          '  hack <target>       simulate Hollywood hacking sequence',
+          '  larp                infinite rapid cyber code stream (Ctrl+C to stop)',
           '',
           'Apps: browser, music, vscode, notepad, paint,',
           '      files, discover, eaglercraft, games',
@@ -253,6 +371,7 @@
       }
 
       case 'clear':
+        stopActiveAnimation()
         lines = []
         return []
 
@@ -278,6 +397,17 @@
         return err(`open: '${name}': No such app or file`)
       }
 
+      case 'hack': {
+        const target = args.join(' ').trim() || 'mainframe'
+        startHackSequence(target)
+        return []
+      }
+
+      case 'larp': {
+        startLarpStream()
+        return []
+      }
+
       default:
         return err(`${cmd}: command not found`)
     }
@@ -286,6 +416,7 @@
   // ── Input ─────────────────────────────────────────────────────────
   async function submit() {
     const raw = input.trim()
+    stopActiveAnimation()
     lines = [...lines, { type: 'cmd', text: `${promptDisplay} ${raw}` }]
     if (raw) {
       cmdHistory = [raw, ...cmdHistory.slice(0, 99)]
@@ -312,12 +443,17 @@
     }
     if (e.ctrlKey && e.key === 'c') {
       e.preventDefault()
+      stopActiveAnimation()
       lines = [...lines, { type: 'cmd', text: `${promptDisplay} ${input}^C` }]
       input = ''
       histIdx = -1
       return
     }
-    if (e.ctrlKey && e.key === 'l') { e.preventDefault(); lines = [] }
+    if (e.ctrlKey && e.key === 'l') {
+      e.preventDefault()
+      stopActiveAnimation()
+      lines = []
+    }
   }
 
   onMount(() => inputEl?.focus())
@@ -372,6 +508,8 @@
   .line.out  { color: var(--term-out,    #d4d4d4); }
   .line.info { color: var(--term-info,   #569cd6); }
   .line.dir  { color: var(--term-dir,    #4ec9b0); font-weight: 600; }
+  .line.hack { color: #00ff66; font-weight: 600; }
+  .line.larp { color: #40c4ff; }
 
   .input-row {
     display: flex;

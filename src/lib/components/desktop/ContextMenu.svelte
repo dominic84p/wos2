@@ -1,13 +1,20 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte'
-  import { Settings, AppWindow, Image, RefreshCw, FolderOpen } from 'lucide-svelte'
+  import { Settings, AppWindow, Image, RefreshCw, FolderOpen, Edit3, Play } from 'lucide-svelte'
 
   export let x: number
   export let y: number
+  export let targetId: string | null = null
 
   const dispatch = createEventDispatcher()
 
-  const items = [
+  $: items = targetId ? [
+    { id: 'open',      label: 'Open',                icon: Play       },
+    { id: 'rename',    label: 'Rename',              icon: Edit3      },
+    { divider: true },
+    { id: 'settings',  label: 'Display settings',    icon: Settings   },
+    { id: 'wallpaper', label: 'Personalize',          icon: Image      },
+  ] : [
     { id: 'settings',  label: 'Display settings',    icon: Settings   },
     { id: 'discover',  label: 'App Store',            icon: AppWindow  },
     { id: 'files',     label: 'Open File Explorer',  icon: FolderOpen },

@@ -9,9 +9,36 @@ export interface VFS {
   dirs: string[]                  // directory paths (always includes '/')
 }
 
+const CUSTOM_NAMES_KEY = 'wos_custom_names'
+
+function loadCustomNames(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_NAMES_KEY) ?? '{}') }
+  catch { return {} }
+}
+
+function createCustomNamesStore() {
+  const { subscribe, set, update } = writable<Record<string, string>>(loadCustomNames())
+  return {
+    subscribe,
+    rename(id: string, newName: string) {
+      update(map => {
+        const next = { ...map, [id]: newName }
+        localStorage.setItem(CUSTOM_NAMES_KEY, JSON.stringify(next))
+        return next
+      })
+    },
+    getName(id: string, fallback: string): string {
+      const map = loadCustomNames()
+      return map[id] || fallback
+    }
+  }
+}
+
+export const customNames = createCustomNamesStore()
+
 const KEY = 'wos_vfs'
 
-const DEFAULTS: VFS = {
+export const DEFAULTS: VFS = {
   files: {
     // User files
     '/Documents/welcome.md': { content: '# Welcome to WOS\n\nThis is your personal workspace.\n' },
@@ -31,7 +58,9 @@ const DEFAULTS: VFS = {
     '/etc/shadow': { content: 'root:!:19800:0:99999:7:::\nuser:$6$xyz$hashedpasswordgoeshere:19800:0:99999:7:::' },
     '/etc/group': { content: 'root:x:0:\ndaemon:x:1:\nsudo:x:27:user\nuser:x:1000:' },
     '/etc/os-release': { content: 'PRETTY_NAME="WOS 1.0 (Stable)"\nNAME="WOS"\nVERSION_ID="1.0"\nVERSION="1.0 (stable)"\nVERSION_CODENAME=stable\nID=wos\nID_LIKE=debian\nHOME_URL="https://wos.local"\nSUPPORT_URL="https://wos.local/support"\nBUG_REPORT_URL="https://github.com/wos/issues"' },
-    '/etc/wos.conf': { content: '[system]\nversion=1.0\nbuild=stable\nkernel=6.1.0-wos-amd64\n\n[display]\nresolution=auto\nscaling=1.0\n\n[network]\ndhcp=true\ndns=1.1.1.1,8.8.8.8' },
+    '/etc/wos.conf': { content: '[system]\nversion=1.0\nbuild=stable\nkernel=6.1.0-wos-amd64\n\n[games]\nenabled=true\nhide_defaults=false\n\n[display]\nresolution=auto\nscaling=1.0\n\n[network]\ndhcp=true\ndns=1.1.1.1,8.8.8.8' },
+    '/etc/games.json': { content: '{\n  "enabled": true,\n  "hideDefaultGames": false,\n  "customGames": []\n}\n' },
+    '/etc/settings.json': { content: '{\n  "theme": "dark",\n  "mountAsRoot": false,\n  "customNames": {}\n}\n' },
     '/etc/crontab': { content: '# /etc/crontab: system-wide crontab\nSHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n\n17 *\t* * *\troot\tcd / && run-parts --report /etc/cron.hourly\n25 6\t* * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )' },
     '/etc/environment': { content: 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games"\nLANG="en_US.UTF-8"\nDISPLAY=":0"' },
 
@@ -132,7 +161,19 @@ function load(): VFS {
   } catch { return structuredClone(DEFAULTS) }
 }
 
+let isHostRootMounted = false
+let onHostMutation: ((op: 'write' | 'delete' | 'mkdir' | 'rmdir' | 'rename', path: string, contentOrTarget?: string) => void) | null = null
+
+export function setRootMountSync(
+  mounted: boolean,
+  handler?: (op: 'write' | 'delete' | 'mkdir' | 'rmdir' | 'rename', path: string, contentOrTarget?: string) => void
+) {
+  isHostRootMounted = mounted
+  onHostMutation = handler ?? null
+}
+
 function save(fs: VFS) {
+  if (isHostRootMounted) return
   localStorage.setItem(KEY, JSON.stringify(fs))
 }
 
@@ -159,6 +200,10 @@ function createFS() {
   return {
     subscribe: store.subscribe,
 
+    setRawState(nextState: VFS) {
+      store.set(nextState)
+    },
+
     writeFile(path: string, content: string) {
       const p = normalize(path)
       mutate(fs => {
@@ -167,6 +212,9 @@ function createFS() {
         const parent = parentOf(p)
         if (!fs.dirs.includes(parent)) fs.dirs.push(parent)
       })
+      if (isHostRootMounted && onHostMutation) {
+        onHostMutation('write', p, content)
+      }
     },
 
     readFile(path: string): string {
@@ -176,6 +224,9 @@ function createFS() {
     deleteFile(path: string) {
       const p = normalize(path)
       mutate(fs => { delete fs.files[p] })
+      if (isHostRootMounted && onHostMutation) {
+        onHostMutation('delete', p)
+      }
     },
 
     mkdir(path: string) {
@@ -183,6 +234,9 @@ function createFS() {
       mutate(fs => {
         if (!fs.dirs.includes(p)) fs.dirs.push(p)
       })
+      if (isHostRootMounted && onHostMutation) {
+        onHostMutation('mkdir', p)
+      }
     },
 
     rmdir(path: string) {
@@ -193,6 +247,9 @@ function createFS() {
           if (k.startsWith(p + '/')) delete fs.files[k]
         }
       })
+      if (isHostRootMounted && onHostMutation) {
+        onHostMutation('rmdir', p)
+      }
     },
 
     rename(oldPath: string, newPath: string) {
@@ -214,6 +271,9 @@ function createFS() {
           }
         }
       })
+      if (isHostRootMounted && onHostMutation) {
+        onHostMutation('rename', op, np)
+      }
     },
 
     // Returns sorted children of a directory (dirs first, then files)

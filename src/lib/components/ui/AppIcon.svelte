@@ -47,7 +47,9 @@
     notepad:     '/icons/notepad.png',
     paint:       '/icons/paint.png',
     dogegagechat:'/icons/dogechat.png',
+    mediaplayer: '/icons/groove.png',
   }
+
 
   const GNOME_ICONS: Partial<Record<AppId, string>> = {
     browser:     '/icons/gnome/browser.svg',
