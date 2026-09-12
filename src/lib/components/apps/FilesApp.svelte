@@ -9,7 +9,7 @@
   import {
     Folder, File, Gamepad2, Monitor, ArrowLeft, ArrowRight, ArrowUp,
     Search, FolderPlus, FilePlus, Trash2, ChevronRight, Code2, Edit3,
-    HardDrive, Download
+    HardDrive, Download, Star
   } from 'lucide-svelte'
   import type { AppId } from '../../types'
 
@@ -81,30 +81,123 @@
     'paperio2.htm', 'poker.html', 'sandgame.html'
   ]
 
-  let games: { filename: string; name: string }[] = []
+  const WOS_PICKS_SET = new Set([
+    '3Dflightsimulator.html','ass_geometrydash.html','backrooms.html','blackjack.html',
+    'flappybird.html','fnaf.html','fnaf2.html','fnaf3.html','fnaf4.html',
+    'googledino.html','granny.html','granny2.html','minesweeper.html','noobminer.html',
+    'paperio2.htm','poker.html','sandgame.html',
+    '1v1.lol.html','among-us.html','angry-birds.html','angry-birds-space.html',
+    'baldis-basics.html','bitlife.html','bloons-TD-5.html','bloons-TD-4.html',
+    'basketball-legends.html','basketball-stars.html','basket-bros.html','baseball-bros.html',
+    'bad-ice-cream.html','bad-ice-cream-2.html','bad-ice-cream-3.html',
+    '2048.html','8-ball-classic.html','bloxorz.html',
+    'age-of-war.html','age-of-war-2.html','10-minutes-till-dawn.html',
+    'bad-piggies.html','awesome-tanks-2.html','zombie-rush.html',
+    'slope.html','slope/index.html','retrobowl.html','retrobowl/index.html',
+    'cookieclicker.html','cookieclicker/index.html',
+  ])
+
+  const GAME_TITLE_MAP: Record<string, string> = {
+    'ass_geometrydash.html':'Geometry Dash','3Dflightsimulator.html':'3D Flight Simulator',
+    '3D-flight-simulator.html':'3D Flight Simulator','backrooms.html':'The Backrooms',
+    'blackjack.html':'Blackjack','poker.html':'Poker','flappybird.html':'Flappy Bird',
+    'fnaf.html':"Five Nights at Freddy's",'fnaf2.html':"Five Nights at Freddy's 2",
+    'fnaf3.html':"Five Nights at Freddy's 3",'fnaf4.html':"Five Nights at Freddy's 4",
+    'googledino.html':'Chrome Dino Run','granny.html':'Granny','granny2.html':'Granny: Chapter Two',
+    'minesweeper.html':'Minesweeper','noobminer.html':'Noob Miner: Jailbreak',
+    'paperio2.htm':'Paper.io 2','sandgame.html':'Falling Sand Game',
+    'retrobowl/index.html':'Retro Bowl','retrobowl.html':'Retro Bowl',
+    'slope/index.html':'Slope','slope.html':'Slope',
+    'cookieclicker/index.html':'Cookie Clicker','cookieclicker.html':'Cookie Clicker',
+    '2048.html':'2048','hextris.html':'Hextris',
+    '1v1.lol.html':'1v1.lol','among-us.html':'Among Us',
+    'angry-birds.html':'Angry Birds','angry-birds-space.html':'Angry Birds Space',
+    'angry-birds-showdown.html':'Angry Birds Showdown',
+    'baldis-basics.html':"Baldi's Basics",'bitlife.html':'BitLife',
+    'bloons-TD.html':'Bloons TD','bloons-TD-2.html':'Bloons TD 2',
+    'bloons-TD-3.html':'Bloons TD 3','bloons-TD-4.html':'Bloons TD 4','bloons-TD-5.html':'Bloons TD 5',
+    'basketball-legends.html':'Basketball Legends','basketball-stars.html':'Basketball Stars',
+    'basket-bros.html':'Basket Bros','baseball-bros.html':'Baseball Bros',
+    'basket-random.html':'Basket Random','bad-ice-cream.html':'Bad Ice Cream',
+    'bad-ice-cream-2.html':'Bad Ice Cream 2','bad-ice-cream-3.html':'Bad Ice Cream 3',
+    '8-ball-classic.html':'8 Ball Classic','bloxorz.html':'Bloxorz',
+    'age-of-war.html':'Age of War','age-of-war-2.html':'Age of War 2',
+    '10-minutes-till-dawn.html':'10 Minutes Till Dawn','bad-piggies.html':'Bad Piggies',
+    'awesome-tanks.html':'Awesome Tanks','awesome-tanks-2.html':'Awesome Tanks 2',
+    'zombie-rush.html':'Zombie Rush','1-on-1-soccer.html':'1 on 1 Soccer',
+    '1-on-1-tennis.html':'1 on 1 Tennis','agar-io-lite.html':'Agar.io Lite',
+    'bacon-may-die.html':'Bacon May Die','blocky-snakes.html':'Blocky Snakes',
+  }
+
+  function fmtGameName(filename: string): string {
+    if (GAME_TITLE_MAP[filename]) return GAME_TITLE_MAP[filename]
+    return filename.replace(/\/index\.html?$/i,'').replace(/\.html?$/i,'')
+      .replace(/^[a-z]+_/i,'').replace(/[-_]/g,' ')
+      .replace(/([a-z])([A-Z])/g,'$1 $2').replace(/\b\w/g,c=>c.toUpperCase())
+  }
+
+  // Favorites
+  let gameFavs: Set<string> = new Set()
+  function loadGameFavs() {
+    try { const r = localStorage.getItem('wos_game_favs'); if (r) gameFavs = new Set(JSON.parse(r)) } catch {}
+  }
+  function saveGameFavs() { localStorage.setItem('wos_game_favs', JSON.stringify([...gameFavs])) }
+  function toggleGameFav(filename: string) {
+    if (gameFavs.has(filename)) gameFavs.delete(filename)
+    else gameFavs.add(filename)
+    gameFavs = new Set(gameFavs)
+    saveGameFavs()
+    ctxMenu = null
+  }
+
+  import { installedGamesSet, refreshInstalledGames, getPlayableGameUrl } from '../../stores/installedGames'
+
+  let games: { filename: string; name: string; isDownloaded?: boolean }[] = []
   let gamesLoading = false
 
   async function loadGames() {
-    if (games.length || gamesLoading) return
     gamesLoading = true
+    let fileList: string[] = []
     try {
       const res = await fetch('/games/manifest.json')
       if (res.ok) {
-        const files: string[] = await res.json()
-        games = files.filter(f => /\.html?$/i.test(f))
-          .map(f => ({ filename: f, name: f.replace(/\.html?$/i, '') }))
+        fileList = await res.json()
       } else {
-        throw new Error('manifest load error')
+        fileList = [...FALLBACK_GAMES]
       }
     } catch {
-      games = FALLBACK_GAMES.map(f => ({ filename: f, name: f.replace(/\.html?$/i, '') }))
+      fileList = [...FALLBACK_GAMES]
     }
+
+    const set = new Set(fileList)
+    const storeInstalled = get(installedGamesSet)
+    if (storeInstalled && typeof storeInstalled[Symbol.iterator] === 'function') {
+      for (const f of storeInstalled) {
+        set.add(f)
+      }
+    }
+
+    games = Array.from(set)
+      .filter(f => /\.html?$/i.test(f))
+      .map(f => ({
+        filename: f,
+        name: fmtGameName(f),
+        isDownloaded: !FALLBACK_GAMES.includes(f) && f !== 'zombie-rush.html'
+      }))
+      .sort((a,b) => a.name.localeCompare(b.name))
+
     gamesLoading = false
   }
 
   onMount(() => {
     loadGames()
+    loadGameFavs()
+    refreshInstalledGames()
   })
+
+  $: if ($installedGamesSet) {
+    loadGames()
+  }
 
   // ── Reactive grid items ──────────────────────────────────
   let selected = ''
@@ -125,6 +218,13 @@
   }
 
   $: gridItems = buildGrid(loc, $vfs, games, search, $customNames, $localfs, mountedEntries)
+
+  // Game sections (only used when loc.type === 'games' and not searching)
+  $: gameSearchTerm = search.trim().toLowerCase()
+  $: gamesFiltered  = gameSearchTerm ? games.filter(g => g.name.toLowerCase().includes(gameSearchTerm)) : null
+  $: gamesPicks     = gamesFiltered ? [] : games.filter(g => WOS_PICKS_SET.has(g.filename) && !gameFavs.has(g.filename))
+  $: gamesFavd      = gamesFiltered ? [] : games.filter(g => gameFavs.has(g.filename))
+  $: gamesOther     = gamesFiltered ? [] : games.filter(g => !WOS_PICKS_SET.has(g.filename) && !gameFavs.has(g.filename))
 
   function buildGrid(
     l: Loc,
@@ -404,11 +504,12 @@
     windows.open(appId, APP_LABELS[appId] ?? appId)
   }
 
-  function launchGame(filename: string) {
-    const url = `/games/${filename}`
+  async function launchGame(filename: string) {
+    const isBuiltin = FALLBACK_GAMES.includes(filename) || filename === 'zombie-rush.html'
+    const url = await getPlayableGameUrl(filename, isBuiltin)
     const ex = get(windows).find(w => w.appId === 'game' && w.gameUrl === url)
     if (ex) { windows.focus(ex.id); return }
-    windows.open('game', filename.replace(/\.html?$/i,''), { gameUrl: url, width: 1024, height: 700 })
+    windows.open('game', fmtGameName(filename), { gameUrl: url, width: 1024, height: 700 })
   }
 
   // ── VFS & Local mutations ─────────────────────
@@ -616,7 +717,115 @@
     <div class="content" on:click={() => { selected = ''; newMode = null; bgCtxMenu = null }} on:contextmenu={onBgCtxMenu}>
       {#if loc.type === 'games' && gamesLoading}
         <div class="state-msg">Loading games...</div>
+
+      {:else if loc.type === 'games'}
+        <!-- ── Sectioned games view ── -->
+        <div class="icon-grid">
+
+          {#if gamesFiltered !== null}
+            <!-- Search results: flat -->
+            {#each gamesFiltered as g (g.filename)}
+              {@const isFav = gameFavs.has(g.filename)}
+              <div role="button" tabindex="0" class="tile" class:sel={selected===g.filename} class:tile-fav={isFav}
+                use:ripple
+                on:click|stopPropagation={() => selected = g.filename}
+                on:dblclick={() => launchGame(g.filename)}
+                on:contextmenu={(e) => onCtxMenu(e, { id: g.filename, name: g.name, isFolder: false, iconType: 'gamepad', gameFilename: g.filename })}
+                on:keydown={(e) => e.key==='Enter' && launchGame(g.filename)}
+                title={g.name}>
+                <div class="tile-icon blue" style={isFav ? 'background:rgba(255,215,0,0.1)' : ''}>
+                  <Gamepad2 size={36} color={isFav ? '#ffd700' : '#4cc2ff'} />
+                  {#if isFav}<span class="star-bdg"><Star size={11} fill="#ffd700" color="#ffd700" /></span>{/if}
+                </div>
+                <span class="tile-name">{g.name}</span>
+              </div>
+            {:else}
+              <div class="state-msg">No results for "{search}"</div>
+            {/each}
+
+          {:else}
+            <!-- WOS PICKS -->
+            <div class="sec-row">
+              <span class="sec-lbl">WOS PICKS</span>
+              <div class="sec-rule"></div>
+            </div>
+
+            <!-- EaglerCraft always first -->
+            <div role="button" tabindex="0" class="tile" class:sel={selected==='eaglercraft'}
+              use:ripple
+              on:click|stopPropagation={() => selected = 'eaglercraft'}
+              on:dblclick={() => launchApp('eaglercraft')}
+              on:contextmenu={(e) => onCtxMenu(e, { id: 'eaglercraft', name: 'EaglerCraft', isFolder: false, iconType: 'eagler' })}
+              on:keydown={(e) => e.key==='Enter' && launchApp('eaglercraft')}
+              title="EaglerCraft">
+              <div class="tile-icon green">
+                <AppIcon appId="eaglercraft" size={36} />
+              </div>
+              <span class="tile-name">EaglerCraft</span>
+            </div>
+
+            {#each gamesPicks as g (g.filename)}
+              <div role="button" tabindex="0" class="tile" class:sel={selected===g.filename}
+                use:ripple
+                on:click|stopPropagation={() => selected = g.filename}
+                on:dblclick={() => launchGame(g.filename)}
+                on:contextmenu={(e) => onCtxMenu(e, { id: g.filename, name: g.name, isFolder: false, iconType: 'gamepad', gameFilename: g.filename })}
+                on:keydown={(e) => e.key==='Enter' && launchGame(g.filename)}
+                title={g.name}>
+                <div class="tile-icon blue"><Gamepad2 size={36} color="#4cc2ff" /></div>
+                <span class="tile-name">{g.name}</span>
+              </div>
+            {/each}
+
+            <!-- FAVORITED -->
+            {#if gamesFavd.length > 0}
+              <div class="sec-row">
+                <span class="sec-lbl">FAVORITED</span>
+                <div class="sec-rule"></div>
+              </div>
+              {#each gamesFavd as g (g.filename)}
+                <div role="button" tabindex="0" class="tile tile-fav" class:sel={selected===g.filename}
+                  use:ripple
+                  on:click|stopPropagation={() => selected = g.filename}
+                  on:dblclick={() => launchGame(g.filename)}
+                  on:contextmenu={(e) => onCtxMenu(e, { id: g.filename, name: g.name, isFolder: false, iconType: 'gamepad', gameFilename: g.filename })}
+                  on:keydown={(e) => e.key==='Enter' && launchGame(g.filename)}
+                  title={g.name}>
+                  <div class="tile-icon" style="background:rgba(255,215,0,0.1); position:relative">
+                    <Gamepad2 size={36} color="#ffd700" />
+                    <span class="star-bdg"><Star size={11} fill="#ffd700" color="#ffd700" /></span>
+                  </div>
+                  <span class="tile-name">{g.name}</span>
+                </div>
+              {/each}
+            {/if}
+
+            <!-- OTHER -->
+            {#if gamesOther.length > 0}
+              <div class="sec-row">
+                <span class="sec-lbl">OTHER</span>
+                <div class="sec-rule"></div>
+              </div>
+              {#each gamesOther as g (g.filename)}
+                <div role="button" tabindex="0" class="tile" class:sel={selected===g.filename}
+                  use:ripple
+                  on:click|stopPropagation={() => selected = g.filename}
+                  on:dblclick={() => launchGame(g.filename)}
+                  on:contextmenu={(e) => onCtxMenu(e, { id: g.filename, name: g.name, isFolder: false, iconType: 'gamepad', gameFilename: g.filename })}
+                  on:keydown={(e) => e.key==='Enter' && launchGame(g.filename)}
+                  title={g.name}>
+                  <div class="tile-icon" style="background:rgba(255,255,255,0.04)">
+                    <Gamepad2 size={36} color="rgba(255,255,255,0.35)" />
+                  </div>
+                  <span class="tile-name" style="color:rgba(255,255,255,0.45)">{g.name}</span>
+                </div>
+              {/each}
+            {/if}
+          {/if}
+        </div>
+
       {:else}
+        <!-- ── Non-games flat grid ── -->
         <div class="icon-grid" on:click|stopPropagation={() => {}}>
           {#each gridItems as item (item.id)}
             <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -706,6 +915,17 @@
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <div class="ctx-menu" style="left:{ctxMenu.x}px;top:{ctxMenu.y}px" on:click|stopPropagation>
         <button class="ctx-item" on:click={() => { const it = ctxMenu!.item; ctxMenu = null; activate(it) }}>Open</button>
+        {#if ctxMenu.item.gameFilename}
+          <button class="ctx-item" on:click={() => toggleGameFav(ctxMenu!.item.gameFilename!)}>
+            {#if gameFavs.has(ctxMenu.item.gameFilename)}
+              <Star size={13} style="display:inline-block;margin-right:6px;vertical-align:-2px" />
+              <span>Remove Favorite</span>
+            {:else}
+              <Star size={13} fill="currentColor" style="display:inline-block;margin-right:6px;vertical-align:-2px" />
+              <span>Add to Favorites</span>
+            {/if}
+          </button>
+        {/if}
         {#if ctxMenu.item.vfsPath && !ctxMenu.item.isFolder}
           <button class="ctx-item" on:click={() => { downloadVFSToPC(ctxMenu!.item.vfsPath!, ctxMenu!.item.name); ctxMenu = null }}>
             <Download size={13} style="display:inline-block;margin-right:6px;vertical-align:-2px" /> Download to PC
@@ -766,6 +986,43 @@
     color: #fff;
     font-size: 13px;
     position: relative;
+  }
+
+  /* Section dividers */
+  .sec-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 2px 6px;
+    flex-basis: 100%;
+  }
+  .sec-lbl {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.28);
+    white-space: nowrap;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .sec-rule {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.07);
+  }
+  .star-bdg {
+    position: absolute;
+    bottom: -3px;
+    right: -4px;
+    font-size: 12px;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .tile-fav:hover { background: rgba(255,215,0,0.07) !important; }
+  .tile-fav.sel {
+    background: rgba(255,215,0,0.15) !important;
+    border-color: rgba(255,215,0,0.35) !important;
   }
 
   /* ── Toolbar ── */
