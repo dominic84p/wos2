@@ -117,23 +117,30 @@
 
   type DynamicAppMeta = AppMeta & { isCustomFile?: boolean; isFolder?: boolean; filePath?: string }
 
+  const dummyWosaNames = new Set([
+    'browser.wosa', 'files.wosa', 'notepad.wosa', 'terminal.wosa',
+    'paint.wosa', 'settings.wosa', 'music.wosa', 'app store.wosa',
+    'code.wosa', 'homework.wosa', 'dogegage chat.wosa', 'media player.wosa',
+    'wosgamearchive.wosa'
+  ])
+
   let desktopFiles: DynamicAppMeta[] = []
 
   async function refreshDesktopFiles() {
     let list: DynamicAppMeta[] = []
     if ($localfs.isMounted && $localfs.isRootMounted) {
-      const entries = await localfs.listDir('/Desktop')
+      const entries = (await localfs.listDir('/Desktop')).filter(e => !dummyWosaNames.has(e.name.toLowerCase()))
       list = entries.map(e => ({
-        id: 'dsk_file_' + e.name,
+        id: ('dsk_file_' + e.name) as any,
         label: e.name,
         isCustomFile: true,
         isFolder: e.kind === 'directory',
         filePath: e.path.startsWith('/Desktop') ? e.path : '/Desktop/' + e.name
       }))
     } else {
-      const entries = vfs.listDir('/Desktop')
+      const entries = vfs.listDir('/Desktop').filter(e => !dummyWosaNames.has(e.name.toLowerCase()))
       list = entries.map(e => ({
-        id: 'dsk_file_' + e.name,
+        id: ('dsk_file_' + e.name) as any,
         label: e.name,
         isCustomFile: true,
         isFolder: e.type === 'dir',
@@ -161,6 +168,25 @@
     if (app.isCustomFile && app.filePath) {
       if (app.isFolder) {
         windows.open('files', app.label, { initialPath: app.filePath })
+        return
+      }
+      if (app.label.match(/\.wosa$/i)) {
+        (async () => {
+          try {
+            let content = ''
+            if ($localfs.isMounted && $localfs.isRootMounted) {
+              content = await localfs.readFile(app.filePath!)
+            } else {
+              content = vfs.readFile(app.filePath!)
+            }
+            const parsed = JSON.parse(content)
+            if (parsed.appId) {
+              windows.open(parsed.appId, parsed.title || app.label.replace(/\.wosa$/i, ''))
+              return
+            }
+          } catch {}
+          windows.open('notepad', app.label, { filePath: app.filePath })
+        })()
         return
       }
       const isMedia = app.label.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg|flac|aac|m4a|avi|wmv)$/i)
@@ -206,7 +232,7 @@
     }
     const existing = $windows.find(w => w.appId === app.id)
     if (existing) { windows.focus(existing.id); return }
-    windows.open(app.id, app.label)
+    windows.open(app.id as AppId, app.label)
   }
 
   function appComponent(id: AppId) {

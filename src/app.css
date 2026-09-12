@@ -164,14 +164,20 @@
 html, body {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
   background: #000;
   color: var(--dark-txt);
   user-select: none;
   -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
-#app { width: 100%; height: 100%; }
+#app {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+}
 
 /* Scrollbars */
 ::-webkit-scrollbar { width: 5px; height: 5px; }

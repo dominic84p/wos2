@@ -105,6 +105,104 @@ async function autoApplyHostSettings(handle: FileSystemDirectoryHandle) {
   } catch {}
 }
 
+async function writeDiskPlaceholders(handle: FileSystemDirectoryHandle, isRoot: boolean) {
+  try {
+    let desktopHandle: FileSystemDirectoryHandle
+    if (isRoot) {
+      desktopHandle = await handle.getDirectoryHandle('Desktop', { create: true })
+    } else {
+      try {
+        desktopHandle = await handle.getDirectoryHandle('Desktop', { create: false })
+      } catch {
+        desktopHandle = handle
+      }
+    }
+
+    const defaultApps = [
+      { name: 'Browser.wosa', appId: 'browser', title: 'Browser', icon: 'browser' },
+      { name: 'Files.wosa', appId: 'files', title: 'Files', icon: 'files' },
+      { name: 'Notepad.wosa', appId: 'notepad', title: 'Notepad', icon: 'notepad' },
+      { name: 'Terminal.wosa', appId: 'terminal', title: 'Terminal', icon: 'terminal' },
+      { name: 'Paint.wosa', appId: 'paint', title: 'Paint', icon: 'paint' },
+      { name: 'Settings.wosa', appId: 'settings', title: 'Settings', icon: 'settings' },
+      { name: 'Music.wosa', appId: 'music', title: 'Music', icon: 'music' },
+      { name: 'App Store.wosa', appId: 'discover', title: 'App Store', icon: 'discover' },
+      { name: 'Code.wosa', appId: 'codefolder', title: 'Code', icon: 'codefolder' },
+      { name: 'Homework.wosa', appId: 'gamesfolder', title: 'Homework', icon: 'gamesfolder' },
+      { name: 'DogeGage Chat.wosa', appId: 'dogegagechat', title: 'DogeGage Chat', icon: 'dogegagechat' },
+      { name: 'Media Player.wosa', appId: 'mediaplayer', title: 'Media Player', icon: 'mediaplayer' },
+    ]
+
+    for (const app of defaultApps) {
+      try {
+        let exists = false
+        try {
+          await desktopHandle.getFileHandle(app.name, { create: false })
+          exists = true
+        } catch {}
+
+        if (!exists) {
+          const fileHandle = await desktopHandle.getFileHandle(app.name, { create: true })
+          // @ts-ignore
+          const writable = await fileHandle.createWritable()
+          const data = JSON.stringify({
+            type: 'wosa_app',
+            version: '1.0',
+            appId: app.appId,
+            title: app.title,
+            icon: app.icon
+          }, null, 2)
+          await writable.write(data)
+          await writable.close()
+        }
+      } catch (err) {
+        console.warn(`Failed to write placeholder ${app.name} to disk:`, err)
+      }
+    }
+
+    // In games folder, write wosgamearchive.wosa
+    try {
+      let gamesHandle: FileSystemDirectoryHandle | null = null
+      if (isRoot) {
+        gamesHandle = await handle.getDirectoryHandle('Games', { create: true })
+      } else {
+        try {
+          gamesHandle = await handle.getDirectoryHandle('Games', { create: false })
+        } catch {
+          if (handle.name.toLowerCase() === 'games') gamesHandle = handle
+        }
+      }
+
+      if (gamesHandle) {
+        let exists = false
+        try {
+          await gamesHandle.getFileHandle('wosgamearchive.wosa', { create: false })
+          exists = true
+        } catch {}
+
+        if (!exists) {
+          const fileHandle = await gamesHandle.getFileHandle('wosgamearchive.wosa', { create: true })
+          // @ts-ignore
+          const writable = await fileHandle.createWritable()
+          const data = JSON.stringify({
+            type: 'wosa_archive',
+            version: '1.0',
+            appId: 'gamesfolder',
+            title: 'WOS Game Archive',
+            description: 'WOS Game Archive Storage'
+          }, null, 2)
+          await writable.write(data)
+          await writable.close()
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to write wosgamearchive.wosa to disk:', err)
+    }
+  } catch (e) {
+    console.warn('Error in writeDiskPlaceholders:', e)
+  }
+}
+
 function createLocalFSStore() {
   const store = writable<LocalFSState>(initialState)
   let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -351,6 +449,7 @@ function createLocalFSStore() {
         try {
           // @ts-ignore
           const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
+          await writeDiskPlaceholders(handle, false)
           await saveHandleToIDB(handle, false)
           const entries = await refreshEntries(handle)
           store.set({
@@ -424,6 +523,7 @@ function createLocalFSStore() {
             try { await handle.getDirectoryHandle(d, { create: true }) } catch {}
           }
 
+          await writeDiskPlaceholders(handle, true)
           await autoApplyHostSettings(handle)
           await syncHostRootToVFS(handle)
           await saveHandleToIDB(handle, true)

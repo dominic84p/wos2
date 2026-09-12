@@ -31,7 +31,7 @@ export default {
     if (/\/generate_204($|\?)/.test(url.pathname))
       return new Response(null, { status: 204, headers: corsHeaders(request) })
 
-    let target = url.searchParams.get('u')
+    let target = url.searchParams.get('u') || url.searchParams.get('url')
     if (!target && url.pathname !== '/') {
       target = refererTarget(request, url)
       if (!target) {

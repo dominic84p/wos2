@@ -14,27 +14,44 @@
   let dragOffX = 0, dragOffY = 0
   let resizeStartX = 0, resizeStartY = 0
   let resizeStartW = 0, resizeStartH = 0
+  let lastTitleTap = 0
 
-  function onTitlebarMousedown(e: MouseEvent) {
-    if (win.maximized) return
+  function onTitlebarPointerdown(e: PointerEvent) {
     if ((e.target as HTMLElement).closest('button')) return
+
+    // Double tap detection for touch devices
+    const now = Date.now()
+    if (now - lastTitleTap < 350) {
+      lastTitleTap = 0
+      windows.toggleMaximize(win.id)
+      return
+    }
+    lastTitleTap = now
+
+    if (win.maximized) return
     dragging = true
     dragOffX = e.clientX - win.x
     dragOffY = e.clientY - win.y
+    try {
+      (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId)
+    } catch {}
     e.preventDefault()
   }
 
   function onTitlebarDblclick() { windows.toggleMaximize(win.id) }
 
-  function onResizeMousedown(e: MouseEvent) {
+  function onResizePointerdown(e: PointerEvent) {
     if (win.maximized) return
     resizing = true
     resizeStartX = e.clientX; resizeStartY = e.clientY
     resizeStartW = win.width; resizeStartH = win.height
+    try {
+      (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId)
+    } catch {}
     e.preventDefault(); e.stopPropagation()
   }
 
-  function onMousemove(e: MouseEvent) {
+  function onPointermove(e: PointerEvent) {
     if (dragging) {
       const x = Math.max(0, Math.min(window.innerWidth  - win.width,  e.clientX - dragOffX))
       const y = Math.max(0, Math.min(window.innerHeight - 48 - win.height, e.clientY - dragOffY))
@@ -47,7 +64,12 @@
     }
   }
 
-  function onMouseup() { dragging = false; resizing = false }
+  function onPointerup(e: PointerEvent) {
+    if (dragging || resizing) {
+      dragging = false
+      resizing = false
+    }
+  }
 
   function checkIframeFocus() {
     if (document.activeElement && el?.contains(document.activeElement)) {
@@ -56,14 +78,16 @@
   }
 
   onMount(() => {
-    window.addEventListener('mousemove', onMousemove)
-    window.addEventListener('mouseup', onMouseup)
+    window.addEventListener('pointermove', onPointermove)
+    window.addEventListener('pointerup', onPointerup)
+    window.addEventListener('pointercancel', onPointerup)
     window.addEventListener('blur', checkIframeFocus, true)
     window.addEventListener('focusin', checkIframeFocus, true)
   })
   onDestroy(() => {
-    window.removeEventListener('mousemove', onMousemove)
-    window.removeEventListener('mouseup', onMouseup)
+    window.removeEventListener('pointermove', onPointermove)
+    window.removeEventListener('pointerup', onPointerup)
+    window.removeEventListener('pointercancel', onPointerup)
     window.removeEventListener('blur', checkIframeFocus, true)
     window.removeEventListener('focusin', checkIframeFocus, true)
   })
@@ -86,15 +110,16 @@
   style={posStyle}
   bind:this={el}
   on:mousedown={() => windows.focus(win.id)}
+  on:pointerdown={() => windows.focus(win.id)}
 >
   <div
     class="toolbar"
-    on:mousedown={onTitlebarMousedown}
+    on:pointerdown={onTitlebarPointerdown}
     on:dblclick={onTitlebarDblclick}
   >
     {#if theme === 'linux'}
       <!-- GNOME: controls on left, no app icon, centered title -->
-      <div class="win-controls gnome-controls" on:mousedown|stopPropagation>
+      <div class="win-controls gnome-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation>
         <button class="ctrl-btn gnome-close" use:ripple on:click={() => windows.close(win.id)} title="Close">
           <img src="/icons/ui/gnome-close.svg" alt="close" width="12" height="12" draggable="false" class="gnome-icon" />
         </button>
@@ -111,7 +136,7 @@
       <!-- Hacker: text-only green brackets -->
       <div class="title-icon"><AppIcon appId={win.appId} size={16} /></div>
       <span class="appFullName">{win.title}</span>
-      <div class="win-controls" on:mousedown|stopPropagation>
+      <div class="win-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation>
         <button class="ctrl-btn hk-btn hk-min" use:ripple on:click={() => windows.minimize(win.id)} title="Minimize">−</button>
         <button class="ctrl-btn hk-btn hk-max" use:ripple on:click={() => windows.toggleMaximize(win.id)} title={win.maximized ? 'Restore' : 'Maximize'}>□</button>
         <button class="ctrl-btn hk-btn hk-close" use:ripple on:click={() => windows.close(win.id)} title="Close">×</button>
@@ -121,7 +146,7 @@
       <!-- AI Slop: macOS traffic-light gradient circles -->
       <div class="title-icon"><AppIcon appId={win.appId} size={16} /></div>
       <span class="appFullName">{win.title}</span>
-      <div class="win-controls slop-controls" on:mousedown|stopPropagation>
+      <div class="win-controls slop-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation>
         <button class="ctrl-btn slop-btn slop-min" use:ripple on:click={() => windows.minimize(win.id)} title="Minimize">
           <span class="slop-glyph">−</span>
         </button>
@@ -137,7 +162,7 @@
       <!-- Default: Windows 11 png icons -->
       <div class="title-icon"><AppIcon appId={win.appId} size={16} /></div>
       <span class="appFullName">{win.title}</span>
-      <div class="win-controls" on:mousedown|stopPropagation>
+      <div class="win-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation>
         <button class="ctrl-btn minimize" use:ripple on:click={() => windows.minimize(win.id)} title="Minimize">
           <img src="/icons/ui/minimize.png" alt="minimize" width="10" height="10" draggable="false" />
         </button>
@@ -159,7 +184,7 @@
   </div>
 
   {#if !win.maximized}
-    <div class="resize-handle" on:mousedown={onResizeMousedown}></div>
+    <div class="resize-handle" on:pointerdown={onResizePointerdown} on:mousedown={onResizePointerdown}></div>
   {/if}
 </div>
 
@@ -204,6 +229,7 @@
     cursor: default;
     user-select: none;
     -webkit-user-select: none;
+    touch-action: none;
   }
 
   .floatTab[data-focused="false"] .toolbar { background: var(--window-titlebar-bg); }
@@ -277,8 +303,9 @@
   .resize-handle {
     position: absolute;
     bottom: 0; right: 0;
-    width: 18px; height: 18px;
+    width: 24px; height: 24px;
     cursor: se-resize;
+    touch-action: none;
   }
 
   .resize-handle::after {

@@ -301,7 +301,7 @@ app.use(async (req, res) => {
     catch { Object.entries(cors(req)).forEach(([k,v]) => res.setHeader(k,v)); res.status(200).end(); return }
   }
 
-  let target = reqUrl.searchParams.get('u')
+  let target = reqUrl.searchParams.get('u') || reqUrl.searchParams.get('url')
   if (!target && reqUrl.pathname !== '/') target = refererTarget(req, reqUrl)
   if (!target) { res.setHeader('content-type','text/html;charset=utf-8').send(landing()); return }
   if (!target.startsWith('http')) target = 'https://' + target

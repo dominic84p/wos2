@@ -267,6 +267,25 @@
   // ── Actions ──────────────────────────────────────────────
   async function activate(item: GridItem) {
     if (item.navLoc) { go(item.navLoc); return }
+    if (item.name.match(/\.wosa$/i)) {
+      try {
+        let content = ''
+        if (item.localPath) {
+          content = await localfs.readFile(item.localPath)
+        } else if (item.vfsPath) {
+          content = vfs.readFile(item.vfsPath)
+        }
+        if (content) {
+          const parsed = JSON.parse(content)
+          if (parsed.appId) {
+            launchApp(parsed.appId)
+            return
+          }
+        }
+      } catch (err) {
+        console.warn('Could not launch .wosa app:', err)
+      }
+    }
     const isMedia = item.name.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg)$/i)
     if (isMedia) {
       const p = item.localPath ? item.localPath : item.vfsPath

@@ -18,25 +18,32 @@
   let dragging = false
   let startX = 0, startY = 0
   let moved = false
+  let activePointerId: number | null = null
 
-  function onMousedown(e: MouseEvent) {
+  function onPointerdown(e: PointerEvent) {
     if (e.button !== 0) return
+    const wasSelected = selected || focused
     focused = true
     dispatch('focus')
     startX = e.clientX
     startY = e.clientY
     moved = false
     dragging = true
-    window.addEventListener('mousemove', onWindowMousemove)
-    window.addEventListener('mouseup', onWindowMouseup, { once: true })
+    activePointerId = e.pointerId
+    try {
+      (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId)
+    } catch {}
+    window.addEventListener('pointermove', onWindowPointermove)
+    window.addEventListener('pointerup', onWindowPointerup, { once: true })
+    window.addEventListener('pointercancel', onWindowPointerup, { once: true })
     e.preventDefault()
   }
 
-  function onWindowMousemove(e: MouseEvent) {
+  function onWindowPointermove(e: PointerEvent) {
     if (!dragging) return
     const dx = e.clientX - startX
     const dy = e.clientY - startY
-    if (!moved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) moved = true
+    if (!moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) moved = true
     if (moved) {
       dispatch('move', { x: x + dx, y: y + dy })
       startX = e.clientX
@@ -44,8 +51,8 @@
     }
   }
 
-  function onWindowMouseup() {
-    window.removeEventListener('mousemove', onWindowMousemove)
+  function onWindowPointerup() {
+    window.removeEventListener('pointermove', onWindowPointermove)
     if (!moved) {
       clicks++
       if (clicks === 1) {
@@ -60,6 +67,7 @@
     }
     dragging = false
     moved = false
+    activePointerId = null
   }
 
   function globalClick(e: MouseEvent) {
@@ -87,7 +95,8 @@
   class:dragging={dragging && moved}
   data-appid={app.id}
   style="left:{x}px;top:{y}px"
-  on:mousedown={onMousedown}
+  on:pointerdown={onPointerdown}
+  on:mousedown={onPointerdown}
   on:contextmenu={onContextMenu}
   tabindex="0"
 >
@@ -98,13 +107,15 @@
       <Film size={40} color="#0078d4" />
     {:else if app.label.match(/\.(mp3|wav|ogg|flac|aac)$/i)}
       <Music size={40} color="#0078d4" />
+    {:else if app.label.match(/\.wosa$/i)}
+      <AppIcon appId={app.label.toLowerCase().includes('browser') ? 'browser' : (app.label.toLowerCase().includes('terminal') ? 'terminal' : (app.label.toLowerCase().includes('paint') ? 'paint' : (app.label.toLowerCase().includes('settings') ? 'settings' : (app.label.toLowerCase().includes('files') ? 'files' : 'notepad'))))} size={44} />
     {:else}
       <File size={40} color="#3584e4" />
     {/if}
   {:else}
     <AppIcon appId={app.id} size={44} />
   {/if}
-  <div class="appName">{app.label}</div>
+  <div class="appName">{app.label.replace(/\.wosa$/i, '')}</div>
 </div>
 
 <style>
@@ -125,6 +136,7 @@
     transition: background 150ms ease-in-out;
     user-select: none;
     -webkit-user-select: none;
+    touch-action: none;
   }
 
   .dskApp.dragging {

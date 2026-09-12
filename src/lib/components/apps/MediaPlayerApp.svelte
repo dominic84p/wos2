@@ -6,7 +6,7 @@
   import {
     Play, Pause, Volume2, VolumeX, Maximize, Music,
     PictureInPicture, RotateCcw, RotateCw, FolderOpen, Repeat,
-    Home, Scaling, Sliders, MessageSquare, Monitor, MoreHorizontal
+    Home, Scaling, Sliders, Monitor, MoreHorizontal
   } from 'lucide-svelte'
 
   export let windowId: string = ''
