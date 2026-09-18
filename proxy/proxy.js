@@ -169,6 +169,7 @@ try{
       }
     });
   }
+}catch(e){}
 var _lastNav='',_lastTitle='',_lastTitleUrl='';
 function _post(kind){try{if(!_rp)return;var u=_realProp('href')||T,t=document.title||'';if(kind==='nav'){if(u===_lastNav)return;_lastNav=u;}else{if(u===_lastTitleUrl&&t===_lastTitle)return;_lastTitleUrl=u;_lastTitle=t;}var m={__wos:kind,url:u};if(kind==='title')m.title=t;_rp.postMessage(m,'*');}catch(e){}}
 function _wn(){_post('nav');}
