@@ -17,12 +17,29 @@
   let online = navigator.onLine
   let timeStr = ''
   let dateStr = ''
+  let revealed = false
+  let revealTimer: ReturnType<typeof setTimeout> | undefined
+
+  function cancelReveal() {
+    clearTimeout(revealTimer)
+    revealTimer = undefined
+    revealed = false
+  }
+
+  function scheduleReveal() {
+    if (revealTimer !== undefined || revealed) return
+    revealTimer = setTimeout(() => {
+      revealed = true
+      revealTimer = undefined
+    }, 800)
+  }
 
   let ctxWinId: string | null = null
   let ctxWinX = 0, ctxWinY = 0
 
   $: edge = $settings.taskbarEdge ?? 'bottom'
   $: isVert = edge === 'left' || edge === 'right'
+  $: { edge; $settings.autoHideTaskbar; cancelReveal() }
 
   function updateClock() {
     const now = new Date()
@@ -40,6 +57,7 @@
     window.addEventListener('offline', setOffline)
   })
   onDestroy(() => {
+    cancelReveal()
     window.removeEventListener('online', setOnline)
     window.removeEventListener('offline', setOffline)
   })
@@ -83,6 +101,11 @@
   />
 {/if}
 
+<!-- svelte-ignore a11y-no-static-element-interactions -->
+<div class="taskbar-edge" data-edge={edge}
+  class:auto-hide={$settings.autoHideTaskbar}
+  class:revealed={revealed || startMenuOpen || !!ctxWinId}
+  on:pointerenter={scheduleReveal} on:pointerleave={cancelReveal}>
 <div class="taskbar" data-edge={edge}>
   <div class="taskcont">
     <div class="tsbar">
@@ -161,6 +184,8 @@
   </div>
 </div>
 
+</div>
+
 <!-- Window context menu -->
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -183,6 +208,20 @@
 {/if}
 
 <style>
+  .taskbar-edge {
+    position: fixed;
+    z-index: 10000;
+  }
+  .taskbar-edge[data-edge="bottom"] { bottom: 0; left: 0; right: 0; height: 3px; }
+  .taskbar-edge[data-edge="top"] { top: 0; left: 0; right: 0; height: 3px; }
+  .taskbar-edge[data-edge="left"] { top: 0; bottom: 0; left: 0; width: 3px; }
+  .taskbar-edge[data-edge="right"] { top: 0; bottom: 0; right: 0; width: 3px; }
+  .taskbar { transition: transform 0.2s ease; }
+  .auto-hide:not(.revealed):not(:has(:focus-visible)) .taskbar[data-edge="bottom"] { transform: translateY(100%); }
+  .auto-hide:not(.revealed):not(:has(:focus-visible)) .taskbar[data-edge="top"] { transform: translateY(-100%); }
+  .auto-hide:not(.revealed):not(:has(:focus-visible)) .taskbar[data-edge="left"] { transform: translateX(-100%); }
+  .auto-hide:not(.revealed):not(:has(:focus-visible)) .taskbar[data-edge="right"] { transform: translateX(100%); }
+
   /* ── Base taskbar ── */
   .taskbar {
     position: fixed;

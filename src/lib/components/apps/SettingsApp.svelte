@@ -306,6 +306,26 @@
 
     {:else if activeSection === 'desktop'}
 
+      <section>
+        <h2>Auto-hide Bars</h2>
+        <label class="toggle-card">
+          <div>
+            <div class="toggle-title">Hide top bar until hover or drag</div>
+            <p class="hint">Hover over a window's top edge to show its controls, or drag the edge to move it.</p>
+          </div>
+          <input type="checkbox" checked={$settings.autoHideTitlebar}
+            on:change={(e) => settings.patch({ autoHideTitlebar: e.currentTarget.checked })} />
+        </label>
+        <label class="toggle-card">
+          <div>
+            <div class="toggle-title">Automatically hide the taskbar</div>
+            <p class="hint">Hold your pointer at the screen edge for 0.8 seconds to reveal it. It hides when you move away.</p>
+          </div>
+          <input type="checkbox" checked={$settings.autoHideTaskbar}
+            on:change={(e) => settings.patch({ autoHideTaskbar: e.currentTarget.checked })} />
+        </label>
+      </section>
+
       <!-- Taskbar position -->
       <section>
         <h2>Taskbar Position</h2>

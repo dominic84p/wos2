@@ -17,7 +17,7 @@
   // ── Taskbar edge CSS vars ─────────────────────────────────────────
   $: {
     const edge = $settings.taskbarEdge ?? 'bottom'
-    const sz = 'var(--taskbar-height)'
+    const sz = $settings.autoHideTaskbar ? '0px' : 'var(--taskbar-height)'
     document.documentElement.style.setProperty('--tb-top',    edge === 'top'    ? sz : '0px')
     document.documentElement.style.setProperty('--tb-bottom', edge === 'bottom' ? sz : '0px')
     document.documentElement.style.setProperty('--tb-left',   edge === 'left'   ? sz : '0px')

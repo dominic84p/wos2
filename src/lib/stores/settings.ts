@@ -12,6 +12,8 @@ const defaults: SaveState = {
   musicVolume: 0.7,
   willMode: false,
   taskbarEdge: 'bottom',
+  autoHideTitlebar: false,
+  autoHideTaskbar: false,
   version: CURRENT_VERSION,
 }
 

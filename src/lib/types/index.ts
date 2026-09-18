@@ -38,6 +38,8 @@ export interface SaveState {
   musicVolume: number
   willMode: boolean
   taskbarEdge: TaskbarEdge
+  autoHideTitlebar: boolean
+  autoHideTaskbar: boolean
   version: number
 }
 

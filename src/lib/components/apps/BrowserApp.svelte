@@ -28,7 +28,6 @@
     CircleUser,
     Search,
     Sliders,
-    Settings,
     Cloud,
     ChevronDown,
     MoreHorizontal,
@@ -104,6 +103,13 @@
   let landingStyle: LandingStyleMode = 
     (typeof localStorage !== 'undefined' && (localStorage.getItem('wos_browser_landing_style') as LandingStyleMode)) || 'auto'
   let showLandingCustomizeModal = false
+  let supergoogle = localStorage.getItem('wos_browser_supergoogle') === 'true'
+
+  function setSupergoogle(enabled: boolean) {
+    supergoogle = enabled
+    localStorage.setItem('wos_browser_supergoogle', String(enabled))
+    if (enabled && activeTab && !activeTab.url) goHome()
+  }
 
   $: effectiveLandingStyle = landingStyle === 'auto' ? impersonationTheme : landingStyle
 
@@ -245,7 +251,7 @@
     if (!input) return 'New Tab'
     let target = cleanDisplayUrl(input.trim())
     if (!/^https?:\/\//i.test(target) && !/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}/i.test(target)) {
-      return 'duckduckgo.com'
+      return supergoogle ? 'google.com' : 'duckduckgo.com'
     }
     try {
       const u = new URL(target.startsWith('http') ? target : 'https://' + target)
@@ -324,8 +330,7 @@
   // Multi-Tab Actions
   function addTab(initialTargetUrl?: string) {
     const newId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
-    const targetUrl = initialTargetUrl ? `${PROXY_HOST}/?transport=${selectedTransport}&url=${encodeURIComponent(initialTargetUrl)}` : ''
-    const display = initialTargetUrl ? cleanDisplayUrl(initialTargetUrl) : ''
+    const { iframeSrc: targetUrl, display } = buildProxyUrl(initialTargetUrl ?? '')
     const newTab: Tab = {
       id: newId,
       title: display ? deriveFriendlyTitle(display) : 'New Tab',
@@ -355,18 +360,8 @@
     if (index === -1) return
 
     if (tabs.length === 1) {
-      const freshId = 'tab_' + Date.now()
-      tabs = [
-        {
-          id: freshId,
-          title: 'New Tab',
-          url: '',
-          displayUrl: '',
-          loading: false,
-        },
-      ]
-      activeTabId = freshId
-      addressBarInput = ''
+      tabs = []
+      addTab()
       delete iframeRefs[tabId]
       return
     }
@@ -426,7 +421,7 @@
   }
 
   function buildProxyUrl(rawInput: string): { iframeSrc: string; display: string } {
-    let query = rawInput.trim()
+    let query = rawInput.trim() || (supergoogle ? 'https://www.google.com/' : '')
     if (!query) {
       return {
         iframeSrc: '',
@@ -446,7 +441,7 @@
       }
     }
 
-    const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`
+    const searchUrl = `${supergoogle ? 'https://www.google.com/search?q=' : 'https://duckduckgo.com/?q='}${encodeURIComponent(query)}`
     return {
       iframeSrc: `${PROXY_HOST}/?transport=${selectedTransport}&url=${encodeURIComponent(searchUrl)}`,
       display: query,
@@ -459,7 +454,7 @@
     activeTab.url = iframeSrc
     activeTab.displayUrl = display
     activeTab.title = deriveFriendlyTitle(display)
-    activeTab.loading = true
+    activeTab.loading = !!iframeSrc
     tabs = [...tabs]
 
     const iframe = iframeRefs[activeTab.id]
@@ -823,6 +818,7 @@
   let pollTimer: any = null
 
   onMount(() => {
+    if (supergoogle) goHome()
     updateBrowserTitle()
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('message', handleWindowMessage)
@@ -859,6 +855,12 @@
           <div class="tab-icon-wrapper">
             {#if tab.loading}
               <div class="tab-spinner"></div>
+            {:else if impersonationTheme === 'chrome'}
+              {#if !tab.url}
+                <img src="/icons/chrome.svg" alt="" width="16" height="16" />
+              {:else}
+                <Globe size={16} />
+              {/if}
             {/if}
           </div>
           <span class="tab-title">{tab.title || 'New Tab'}</span>
@@ -903,6 +905,8 @@
       <div class="omnibox-icon" title="View site information">
         {#if impersonationTheme === 'firefox'}
           <ShieldCheck size={14} class="omnibox-shield" />
+        {:else if impersonationTheme === 'chrome'}
+          <SlidersHorizontal size={16} />
         {:else}
           <Lock size={12} class="omnibox-lock" />
         {/if}
@@ -911,7 +915,7 @@
         type="text"
         class="omnibox-input"
         bind:value={addressBarInput}
-        placeholder={impersonationTheme === 'safari' ? 'Search or enter website name' : 'Search Google or type a URL'}
+        placeholder={impersonationTheme === 'safari' ? 'Search or enter website name' : `Search ${supergoogle ? 'Google' : 'DuckDuckGo'} or type a URL`}
         on:focus={() => (isEditingUrl = true)}
         on:blur={() => setTimeout(() => (isEditingUrl = false), 150)}
         on:keydown={handleAddressKeyDown}
@@ -1076,6 +1080,11 @@
 
         <!-- Landing Page Look Selector -->
         <div class="menu-section">
+          <label class="supergoogle-toggle">
+            <span><strong>Supergoogle</strong><small>Use Google search and google.com for new tabs</small></span>
+            <input type="checkbox" role="switch" checked={supergoogle}
+              on:change={(e) => setSupergoogle(e.currentTarget.checked)} />
+          </label>
           <div class="menu-section-header">
             <Compass size={13} />
             <span>New Tab Landing Look</span>
@@ -1474,7 +1483,7 @@
               <div class="chrome-center-stage">
                 <!-- Authentic Google Logo -->
                 <div class="google-logo">
-                  <span class="g-blue">G</span><span class="g-red">o</span><span class="g-yellow">o</span><span class="g-blue">g</span><span class="g-green">l</span><span class="g-red">e</span>
+                  <img src="https://www.google.com/images/branding/googlelogo/2x/googlelogo_light_color_272x92dp.png" alt="Google" width="272" height="92" />
                 </div>
 
                 <!-- Chrome Search Box -->
@@ -1483,7 +1492,7 @@
                   <input
                     type="text"
                     class="chrome-search-input"
-                    placeholder="Search Google or type a URL"
+                    placeholder="Search {supergoogle ? 'Google' : 'DuckDuckGo'} or type a URL"
                     on:keydown={(e) => {
                       if (e.key === 'Enter') {
                         const val = e.currentTarget.value
@@ -2849,20 +2858,45 @@
   /* ========================================================================= */
 
   /* 1. GOOGLE CHROME IMPERSONATION */
+  .theme-chrome { font-family: 'Segoe UI', Arial, sans-serif; }
+  .supergoogle-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0 16px;
+    cursor: pointer;
+  }
+  .supergoogle-toggle strong { font-size: 13px; font-weight: 500; }
+  .supergoogle-toggle small { display: block; margin-top: 5px; color: #9aa0a6; font-size: 11px; }
+  .supergoogle-toggle input { width: 18px; height: 18px; accent-color: #a8c7fa; }
   .theme-chrome .tab-strip {
     background: #1f1f1f;
     border-bottom: none;
-    height: 40px;
-    padding: 6px 8px 0 8px;
+    height: 42px;
+    flex-shrink: 0;
+    padding: 6px 8px 0;
+    box-sizing: border-box;
   }
+  .theme-chrome .tab-list { gap: 8px; }
   .theme-chrome .browser-tab {
-    background: #242424;
+    background: transparent;
     border: none;
-    border-radius: 8px 8px 0 0;
+    border-radius: 10px 10px 0 0;
     color: #e3e3e3;
-    height: 34px;
+    height: 36px;
+    flex: 0 1 240px;
+    min-width: 72px;
+    max-width: 240px;
+    padding: 0 10px 0 12px;
+    gap: 8px;
     position: relative;
   }
+  .theme-chrome .browser-tab:hover:not(.active) { background: #333537; }
+  .theme-chrome .tab-title { font-size: 12px; font-weight: 400; color: #e3e3e3; }
+  .theme-chrome .tab-icon-wrapper { width: 16px; height: 16px; }
+  .theme-chrome .tab-close-btn { width: 20px; height: 20px; flex-shrink: 0; color: #c4c7c5; }
+  .theme-chrome .new-tab-btn { width: 28px; height: 28px; flex-shrink: 0; margin: 0 0 4px; color: #e3e3e3; }
   .theme-chrome .browser-tab:not(.active)::after {
     content: '';
     position: absolute;
@@ -2873,23 +2907,40 @@
     background: rgba(255, 255, 255, 0.12);
   }
   .theme-chrome .browser-tab.active {
-    background: #35363a;
+    background: #3c3c3c;
     color: #ffffff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    box-shadow: none;
   }
+  .theme-chrome .browser-tab.active::before,
   .theme-chrome .browser-tab.active::after {
-    display: none;
+    content: '';
+    position: absolute;
+    bottom: 0;
+    width: 8px;
+    height: 8px;
+    pointer-events: none;
   }
+  .theme-chrome .browser-tab.active::before { left: -8px; border-radius: 0 0 8px 0; box-shadow: 4px 0 #3c3c3c; }
+  .theme-chrome .browser-tab.active::after { right: -8px; border-radius: 0 0 0 8px; box-shadow: -4px 0 #3c3c3c; }
   .theme-chrome .main-toolbar {
-    background: #35363a;
+    background: #3c3c3c;
     border-bottom: 1px solid #282828;
-    height: 44px;
+    height: 48px;
+    gap: 8px;
+    padding: 0 8px;
   }
+  .theme-chrome .tool-btn { width: 34px; height: 34px; color: #e3e3e3; }
+  .theme-chrome .tool-btn :global(svg) { width: 18px; height: 18px; }
+  .theme-chrome .omnibox-input { min-width: 0; font-size: 14px; color: #e3e3e3; }
+  .theme-chrome .omnibox-input::placeholder { color: #c4c7c5; }
+  .theme-chrome .omnibox-icon { color: #e3e3e3; background: #303134; border-radius: 50%; padding: 4px; }
+  .theme-chrome .chrome-avatar-btn { color: #a8c7fa; }
   .theme-chrome .omnibox-container {
-    background: #202124;
+    min-width: 0;
+    background: #1f1f1f;
     border: 1px solid transparent;
     border-radius: 20px;
-    height: 32px;
+    height: 36px;
   }
   .theme-chrome .omnibox-container.focused {
     border-color: #8ab4f8;
@@ -3295,31 +3346,26 @@
     align-items: center;
     width: 100%;
     max-width: 600px;
-    margin-top: calc(14vh + 10px);
+    margin-top: clamp(80px, 14vh, 160px);
     gap: 28px;
     padding: 0 16px;
     box-sizing: border-box;
   }
   .google-logo {
-    font-size: 78px;
-    font-weight: 500;
-    letter-spacing: -2.5px;
+    width: 272px;
+    height: 92px;
     line-height: 1;
     user-select: none;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
-  .g-blue   { color: #4285f4; }
-  .g-red    { color: #ea4335; }
-  .g-yellow { color: #fbbc05; }
-  .g-green  { color: #34a853; }
 
   .chrome-search-box {
     display: flex;
     align-items: center;
     width: 100%;
     max-width: 560px;
-    height: 46px;
-    background: #303134;
+    height: 48px;
+    background: #fff;
     border-radius: 24px;
     padding: 0 14px 0 18px;
     box-sizing: border-box;
@@ -3327,7 +3373,7 @@
     transition: background 0.15s, box-shadow 0.15s;
   }
   .chrome-search-box:hover, .chrome-search-box:focus-within {
-    background: #3c4043;
+    background: #fff;
     box-shadow: 0 2px 8px 1px rgba(0, 0, 0, 0.38);
   }
   .chrome-search-icon {
@@ -3340,12 +3386,12 @@
     background: transparent;
     border: none;
     outline: none;
-    color: #e8eaed;
+    color: #202124;
     font-size: 14px;
     font-family: inherit;
   }
   .chrome-search-input::placeholder {
-    color: #9aa0a6;
+    color: #5f6368;
   }
   .chrome-search-actions {
     display: flex;
@@ -3371,7 +3417,7 @@
   .chrome-shortcuts-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 18px 24px;
+    gap: 8px 0;
     width: 100%;
     max-width: 480px;
   }
@@ -3379,11 +3425,11 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     background: transparent;
     border: none;
     border-radius: 8px;
-    padding: 8px 4px;
+    padding: 16px 4px;
     cursor: pointer;
     transition: background 0.15s;
     outline: none;
@@ -4301,4 +4347,3 @@
     color: #f4f4f5;
   }
 </style>
-

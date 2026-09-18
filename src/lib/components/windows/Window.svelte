@@ -104,6 +104,8 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
   class="floatTab window-enter"
+  class:auto-hide-titlebar={$settings.autoHideTitlebar}
+  class:dragging
   data-size={win.maximized ? 'full' : 'cstm'}
   data-hide={win.minimized}
   data-focused={win.focused}
@@ -218,6 +220,27 @@
   }
 
   /* Toolbar */
+  .auto-hide-titlebar .toolbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    transform: translateY(calc(-100% + 5px));
+    transition: transform 0.2s ease;
+  }
+
+  .auto-hide-titlebar .toolbar:hover {
+    transform: translateY(0);
+    transition-delay: 0.8s;
+  }
+
+  .auto-hide-titlebar .toolbar:has(:focus-visible),
+  .auto-hide-titlebar.dragging .toolbar {
+    transform: translateY(0);
+    transition-delay: 0s;
+  }
+
   .toolbar {
     height: var(--window-titlebar-height);
     background: var(--window-titlebar-focus);
