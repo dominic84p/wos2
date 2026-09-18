@@ -287,44 +287,18 @@
       const clean = cleanDisplayUrl(currentHref)
       const isProxyHome = clean.includes(PROXY_HOST) || clean === 'about:blank' || !clean
       if (!isProxyHome) {
-        if (clean !== tab.displayUrl) {
+        // During navigation the iframe can briefly expose the previous
+        // document. Never let that fallback overwrite a URL already supplied
+        // by the tab navigation or proxy message.
+        if (!tab.displayUrl && clean) {
           tab.displayUrl = clean
+          tab.title = deriveFriendlyTitle(clean)
           if (tab.id === activeTabId && !isEditingUrl) addressBarInput = clean
         }
-        const friendly = deriveFriendlyTitle(clean)
-        if (friendly && friendly !== tab.title) {
-          tab.title = friendly
-          tabs = [...tabs]
-        }
+        // The iframe title is fucking stale during navigation and keeps
+        // fighting the tab context. The displayed URL is the source of truth.
       }
     }
-  }
-
-  async function fetchEmbeddedTitle(targetUrl: string, tabId: string) {
-    try {
-      const cleanUrl = cleanDisplayUrl(targetUrl)
-      if (!cleanUrl || !cleanUrl.startsWith('http')) return
-      const proxyFetchUrl = `${PROXY_HOST}/?transport=${selectedTransport}&url=${encodeURIComponent(cleanUrl)}`
-      const res = await fetch(proxyFetchUrl, { method: 'GET' })
-      if (res.ok) {
-        const html = await res.text()
-        const match = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-        if (match && match[1]) {
-          const decoded = match[1]
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&#39;/g, "'")
-            .replace(/&quot;/g, '"')
-            .trim()
-          const currentTab = tabs.find((t) => t.id === tabId)
-          if (currentTab && decoded && decoded !== 'WOS') {
-            currentTab.title = decoded
-            tabs = [...tabs]
-          }
-        }
-      }
-    } catch {}
   }
 
   // Multi-Tab Actions
@@ -341,9 +315,6 @@
     tabs = [...tabs, newTab]
     activeTabId = newId
     addressBarInput = newTab.displayUrl
-    if (display.startsWith('http')) {
-      fetchEmbeddedTitle(display, newId)
-    }
   }
 
   function switchTab(tabId: string) {
@@ -462,9 +433,6 @@
       iframe.src = iframeSrc
     }
     isEditingUrl = false
-    if (display.startsWith('http')) {
-      fetchEmbeddedTitle(display, activeTab.id)
-    }
   }
 
   function handleAddressKeyDown(e: KeyboardEvent) {
@@ -502,9 +470,7 @@
       const frame = iframeRefs[activeTabId]
       if (!frame?.contentWindow) return
       frame.contentWindow.history.back()
-      setTimeout(() => tryExtractTabTitle(activeTabId), 150)
       setTimeout(() => tryExtractTabTitle(activeTabId), 500)
-      setTimeout(() => tryExtractTabTitle(activeTabId), 1500)
     } catch {}
   }
 
@@ -513,9 +479,7 @@
       const frame = iframeRefs[activeTabId]
       if (!frame?.contentWindow) return
       frame.contentWindow.history.forward()
-      setTimeout(() => tryExtractTabTitle(activeTabId), 150)
       setTimeout(() => tryExtractTabTitle(activeTabId), 500)
-      setTimeout(() => tryExtractTabTitle(activeTabId), 1500)
     } catch {}
   }
 
@@ -543,9 +507,7 @@
       tabs = [...tabs]
     }
     tryExtractTabTitle(tabId)
-    setTimeout(() => tryExtractTabTitle(tabId), 350)
-    setTimeout(() => tryExtractTabTitle(tabId), 1200)
-    setTimeout(() => tryExtractTabTitle(tabId), 2600)
+    setTimeout(() => tryExtractTabTitle(tabId), 600)
   }
 
   function handleTransportChange() {
@@ -725,29 +687,17 @@
     if (typeof msgData !== 'object' || !msgData) return
 
     // Identify message type and payload
-    let incomingTitle = ''
-    let incomingUrl = ''
-
-    if (msgData.__wos === 'title' || msgData.__wos === 'nav' || msgData.type === 'title' || msgData.type === 'page-title' || msgData.type === 'navigation' || msgData.type === 'url-change') {
-      incomingTitle = msgData.title || msgData.documentTitle || ''
-      incomingUrl = msgData.url || msgData.href || ''
-    } else {
-      if (typeof msgData.title === 'string') incomingTitle = msgData.title
-      if (typeof msgData.documentTitle === 'string') incomingTitle = msgData.documentTitle
-      if (typeof msgData.url === 'string') incomingUrl = msgData.url
-      if (typeof msgData.href === 'string') incomingUrl = msgData.href
-    }
+    // Ignore the iframe title bullshit: its URL is reliable, its title flickers.
+    // Also, GTX 980 -> 1060 upgrade secured; those 2 GB are making life 99% easier.
+    const incomingUrl = typeof msgData.url === 'string'
+      ? msgData.url
+      : (typeof msgData.href === 'string' ? msgData.href : '')
 
     // Match to corresponding tab iframe by checking source or active tab
-    let matchedTab = tabs.find((t) => {
+    const matchedTab = tabs.find((t) => {
       const frame = iframeRefs[t.id]
       return frame && (frame.contentWindow === e.source || frame.contentWindow === (e.source as any)?.parent)
     })
-
-    if (!matchedTab) {
-      matchedTab = tabs.find((t) => t.id === activeTabId)
-    }
-
     if (!matchedTab) return
     let changed = false
 
@@ -763,20 +713,14 @@
           }
           changed = true
         }
-        const friendly = deriveFriendlyTitle(clean)
-        if (friendly && friendly !== matchedTab.title) {
-          matchedTab.title = friendly
+        // The tab label follows the URL the address bar already got right,
+        // instead of trusting the iframe's confused, useless document title.
+        const nextTitle = deriveFriendlyTitle(clean)
+        if (nextTitle !== matchedTab.title) {
+          matchedTab.title = nextTitle
           changed = true
         }
         matchedTab.loading = false
-      }
-    }
-
-    if (incomingTitle && incomingTitle.trim()) {
-      const cleanTitle = incomingTitle.trim()
-      if (cleanTitle && cleanTitle !== 'WOS' && cleanTitle !== 'about:blank' && cleanTitle !== 'Classes' && cleanTitle !== matchedTab.title) {
-        matchedTab.title = cleanTitle
-        changed = true
       }
     }
 
@@ -815,23 +759,15 @@
     showCloakMenu = false
   }
 
-  let pollTimer: any = null
-
   onMount(() => {
     if (supergoogle) goHome()
     updateBrowserTitle()
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('message', handleWindowMessage)
 
-    pollTimer = setInterval(() => {
-      if (activeTabId) {
-        tryExtractTabTitle(activeTabId)
-      }
-    }, 1000)
   })
 
   onDestroy(() => {
-    if (pollTimer) clearInterval(pollTimer)
     if (ffTimerInterval) clearInterval(ffTimerInterval)
     window.removeEventListener('keydown', handleKeyDown)
     window.removeEventListener('message', handleWindowMessage)
