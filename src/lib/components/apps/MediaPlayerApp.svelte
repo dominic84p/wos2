@@ -14,6 +14,7 @@
   let mediaSrc = ''
   let fileName = 'Media Player'
   let isVideo = true
+  $: isImage = /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i.test(fileName) || mediaSrc.startsWith('data:image/')
   let isPlaying = false
   let isMuted = false
   let isLooping = false
@@ -89,7 +90,7 @@
         if (content.startsWith('data:')) {
           mediaSrc = content
         } else {
-          const blob = new Blob([content], { type: isVideo ? 'video/mp4' : 'audio/mp3' })
+          const blob = new Blob([content], { type: /\.svg$/i.test(fileName) ? 'image/svg+xml' : isVideo ? 'video/mp4' : 'audio/mp3' })
           mediaSrc = URL.createObjectURL(blob)
         }
       }
@@ -123,6 +124,7 @@
   }
 
   function togglePlay() {
+    if (isImage) return
     if (!mediaElement) return
     if (isPlaying) {
       mediaElement.pause()
@@ -254,7 +256,9 @@
   <!-- Main Viewport -->
   <div class="media-viewport" on:click={togglePlay} on:dblclick={toggleFullscreen}>
     {#if mediaSrc}
-      {#if isVideo}
+      {#if isImage}
+        <img src={mediaSrc} alt={fileName} class="image-element" />
+      {:else if isVideo}
         <!-- svelte-ignore a11y-media-has-caption -->
         <video
           bind:this={mediaElement}
@@ -310,9 +314,9 @@
     {:else}
       <label class="drop-zone">
         <FolderOpen size={48} color="#f7630c" />
-        <span class="drop-title">Open or Drop Video / Audio File</span>
-        <span class="drop-sub">Supports MP4, WebM, MOV, MKV, MP3, WAV, OGG</span>
-        <input type="file" accept="video/*,audio/*" on:change={handleFileSelect} hidden />
+        <span class="drop-title">Open or Drop Image, Video or Audio</span>
+        <span class="drop-sub">Pictures, videos and music</span>
+        <input type="file" accept="image/*,video/*,audio/*" on:change={handleFileSelect} hidden />
       </label>
     {/if}
 
@@ -328,6 +332,7 @@
   </div>
 
   <!-- Bottom Floating Media Player Controls Bar -->
+  {#if !isImage}
   <div class="bottom-controls-bar" class:hidden={!showControls && isPlaying}>
     <!-- Progress Bar Row -->
     <div class="progress-row">
@@ -358,7 +363,7 @@
       <div class="center-controls">
         <label class="ctrl-btn" title="Open Media File">
           <FolderOpen size={16} />
-          <input type="file" accept="video/*,audio/*" on:change={handleFileSelect} hidden />
+          <input type="file" accept="image/*,video/*,audio/*" on:change={handleFileSelect} hidden />
         </label>
 
         <button class="ctrl-btn" on:click|stopPropagation={() => seekRelative(-10)} title="Rewind 10s (←)">
@@ -457,9 +462,11 @@
       </div>
     </div>
   </div>
+  {/if}
 </div>
 
 <style>
+  .image-element { position: absolute; width: 100%; height: 100%; object-fit: contain; }
   .media-app {
     display: flex;
     flex-direction: column;

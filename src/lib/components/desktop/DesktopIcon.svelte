@@ -1,13 +1,15 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte'
   import AppIcon from '../ui/AppIcon.svelte'
-  import { Folder, File, Film, Music } from 'lucide-svelte'
+  import { Folder, File, Film, Music, Image } from 'lucide-svelte'
+  import RenameInput from '../ui/RenameInput.svelte'
   import type { AppMeta } from '../../types'
 
   export let app: AppMeta & { isCustomFile?: boolean; isFolder?: boolean; filePath?: string }
   export let x = 0
   export let y = 0
   export let selected = false
+  export let renaming = false
 
   const dispatch = createEventDispatcher()
 
@@ -107,6 +109,8 @@
       <Film size={40} color="#0078d4" />
     {:else if app.label.match(/\.(mp3|wav|ogg|flac|aac)$/i)}
       <Music size={40} color="#0078d4" />
+    {:else if app.label.match(/\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i)}
+      <Image size={40} color="#58a6ff" />
     {:else if app.label.match(/\.wosa$/i)}
       <AppIcon appId={app.label.toLowerCase().includes('browser') ? 'browser' : (app.label.toLowerCase().includes('terminal') ? 'terminal' : (app.label.toLowerCase().includes('paint') ? 'paint' : (app.label.toLowerCase().includes('settings') ? 'settings' : (app.label.toLowerCase().includes('files') ? 'files' : 'notepad'))))} size={44} />
     {:else}
@@ -115,7 +119,12 @@
   {:else}
     <AppIcon appId={app.id} size={44} />
   {/if}
-  <div class="appName">{app.label.replace(/\.wosa$/i, '')}</div>
+  {#if renaming}
+    <RenameInput name={app.label} isFile={app.isCustomFile && !app.isFolder}
+      on:save={(e) => dispatch('rename', e.detail)} on:cancel={() => dispatch('renamecancel')} />
+  {:else}
+    <div class="appName">{app.label.replace(/\.wosa$/i, '')}</div>
+  {/if}
 </div>
 
 <style>

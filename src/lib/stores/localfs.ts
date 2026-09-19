@@ -660,6 +660,35 @@ function createLocalFSStore() {
       }
     },
 
+    async rename(oldPath: string, newPath: string): Promise<boolean> {
+      if (oldPath === newPath) return true
+      const oldParts = oldPath.split('/').filter(Boolean)
+      const newParts = newPath.split('/').filter(Boolean)
+      const oldName = oldParts.pop()
+      const newName = newParts.pop()
+      if (!oldName || !newName || newName === '.' || newName === '..') return false
+      const source = await resolveWritableDirectory('/' + oldParts.join('/'))
+      const destination = await resolveWritableDirectory('/' + newParts.join('/'))
+      if (!source || !destination) return false
+      try {
+        for await (const [name] of (destination as any).entries()) {
+          if (name.toLowerCase() === newName.toLowerCase()) return false
+        }
+        const original = await source.getFileHandle(oldName)
+        const file = await original.getFile()
+        const target = await destination.getFileHandle(newName, { create: true })
+        const writable = await (target as any).createWritable()
+        await writable.write(file)
+        await writable.close()
+        await source.removeEntry(oldName)
+        await this.listDir('/' + oldParts.join('/'))
+        return true
+      } catch (error) {
+        console.error('Could not rename mounted file:', error)
+        return false
+      }
+    },
+
     async mkdir(subpath: string): Promise<boolean> {
       const state = get(store)
       if (!state.rootHandle) return false

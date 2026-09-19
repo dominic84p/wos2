@@ -6,10 +6,11 @@
   import { brickSystem } from '../../stores/system'
   import { ripple } from '../../actions/ripple'
   import AppIcon from '../ui/AppIcon.svelte'
+  import RenameInput from '../ui/RenameInput.svelte'
   import {
     Folder, File, Gamepad2, Monitor, ArrowLeft, ArrowRight, ArrowUp,
     Search, FolderPlus, FilePlus, Trash2, ChevronRight, Code2, Edit3,
-    HardDrive, Download, Star
+    HardDrive, Download, Star, Image
   } from 'lucide-svelte'
   import type { AppId } from '../../types'
 
@@ -342,11 +343,19 @@
     ctxMenu = null
   }
 
-  function commitRename(item: GridItem) {
+  async function commitRename(item: GridItem) {
     const val = renameValue.trim()
     if (!val || !renamingId) { renamingId = null; return }
 
-    customNames.rename(item.id, val)
+    renamingId = null
+    if (item.localPath || (item.vfsPath && $localfs.isRootMounted)) {
+      const path = item.localPath ?? item.vfsPath!
+      const nextPath = path.slice(0, path.lastIndexOf('/') + 1) + val
+      if (await localfs.rename(path, nextPath)) {
+        mountedEntries = await localfs.listDir(loc.path ?? '/')
+      }
+      return
+    }
 
     if (item.vfsPath) {
       const parts = item.vfsPath.split('/').filter(Boolean)
@@ -358,7 +367,7 @@
       const parent = parts.length <= 1 ? '/' : '/' + parts.slice(0, -1).join('/')
       const newPath = (parent === '/' ? '' : parent) + '/' + val
       vfs.rename(item.deletePath, newPath)
-    }
+    } else customNames.rename(item.id, val)
 
     renamingId = null
     renameValue = ''
@@ -386,7 +395,7 @@
         console.warn('Could not launch .wosa app:', err)
       }
     }
-    const isMedia = item.name.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg)$/i)
+    const isMedia = item.name.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg|png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i)
     if (isMedia) {
       const p = item.localPath ? item.localPath : item.vfsPath
       if (p) {
@@ -859,20 +868,16 @@
                   <Gamepad2 size={36} color="#4cc2ff" />
                 {:else if item.iconType === 'eagler' || item.iconType === 'app'}
                   <AppIcon appId={item.iconAppId ?? 'eaglercraft'} size={36} />
+                {:else if item.name.match(/\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i)}
+                  <Image size={36} color="#58a6ff" />
                 {:else}
                   <File size={36} color="rgba(255,255,255,0.55)" />
                 {/if}
               </div>
               {#if renamingId === item.id}
-                <!-- svelte-ignore a11y-autofocus -->
-                <input
-                  class="new-input"
-                  bind:value={renameValue}
-                  autofocus
-                  on:click|stopPropagation
-                  on:keydown={(e) => { if (e.key === 'Enter') commitRename(item); if (e.key === 'Escape') { renamingId = null; renameValue = '' } }}
-                  on:blur={() => commitRename(item)}
-                />
+                <RenameInput name={item.name} isFile={!item.isFolder && !!(item.vfsPath || item.localPath)}
+                  on:save={(e) => { renameValue = e.detail; commitRename(item) }}
+                  on:cancel={() => renamingId = null} />
               {:else}
                 <span class="tile-name">{item.name}</span>
               {/if}

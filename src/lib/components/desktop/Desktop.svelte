@@ -189,7 +189,7 @@
         })()
         return
       }
-      const isMedia = app.label.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg|flac|aac|m4a|avi|wmv)$/i)
+      const isMedia = app.label.match(/\.(mp4|webm|mov|m4v|mkv|mp3|wav|ogg|flac|aac|m4a|avi|wmv|png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i)
       if (isMedia) {
         windows.open('mediaplayer', app.label, { filePath: app.filePath, width: 850, height: 550 })
         return
@@ -354,6 +354,7 @@
   // ── Context menu ──────────────────────────────────────────────────
   let ctxX = 0, ctxY = 0, ctxOpen = false
   let ctxTargetId: string | null = null
+  let renamingId: string | null = null
 
   function onIconContextMenu(e: CustomEvent<{ x: number; y: number }>, app: AppMeta) {
     selectedIds = new Set([app.id])
@@ -384,14 +385,21 @@
     if (action === 'wallpaper') launch({ id: 'settings', label: 'Settings'  })
     if (action === 'files')     launch({ id: 'files',    label: 'Files'     })
     if (action === 'rename' && ctxTargetId) {
-      const appMeta = apps.find(a => a.id === ctxTargetId)
-      const current = appMeta?.label ?? 'Item'
-      const n = prompt('Rename item:', current)
-      if (n && n.trim()) customNames.rename(ctxTargetId, n.trim())
+      renamingId = ctxTargetId
     }
   }
 
   let isDropTarget = false
+  async function commitDesktopRename(app: DynamicAppMeta, name: string) {
+    renamingId = null
+    if (app.isCustomFile && app.filePath) {
+      const nextPath = app.filePath.slice(0, app.filePath.lastIndexOf('/') + 1) + name
+      if ($localfs.isMounted && $localfs.isRootMounted) {
+        if (!await localfs.rename(app.filePath, nextPath)) return
+      } else vfs.rename(app.filePath, nextPath)
+      await refreshDesktopFiles()
+    } else customNames.rename(app.id, name)
+  }
   let dropDepth = 0
   let dropMessage = ''
 
@@ -530,6 +538,9 @@
           x={iconPositions[app.id]?.x ?? 10}
           y={iconPositions[app.id]?.y ?? 10}
           selected={selectedIds.has(app.id)}
+          renaming={renamingId === app.id}
+          on:rename={(e) => commitDesktopRename(app, e.detail)}
+          on:renamecancel={() => renamingId = null}
           on:open={() => launch(app)}
           on:move={(e) => { clearSelection(); onIconMove(app.id, e.detail) }}
           on:moveend={() => onIconMoveEnd(app.id)}
